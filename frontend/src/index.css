@@ -1,0 +1,164 @@
+@import "@fontsource-variable/geist";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .document-viewer {
+    background: #ffffff;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 64px 80px;
+    font-family: 'Georgia', serif;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #1a1a1a;
+    border: 1px solid #e4e4e0;
+    border-radius: 4px;
+  }
+
+  .document-viewer.diff-mode ins {
+    background: #dcfce7;
+    color: #15803d;
+    text-decoration: none;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  .document-viewer.diff-mode del {
+    background: #fee2e2;
+    color: #b91c1c;
+    text-decoration: line-through;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  /* Document HTML Element Styling */
+  .document-viewer h1, .document-viewer h2, .document-viewer h3, .document-viewer h4 {
+    font-weight: 600;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    color: #1a1a1a;
+  }
+  .document-viewer h1 { font-size: 1.8em; } 
+  .document-viewer h2 { font-size: 1.5em; } 
+  .document-viewer h3 { font-size: 1.3em; }
+  .document-viewer p {
+    margin-bottom: 1em;
+  }
+  .document-viewer ul {
+    list-style-type: disc;
+    margin-left: 2em;
+    margin-bottom: 1em;
+  }
+  .document-viewer ol {
+    list-style-type: decimal;
+    margin-left: 2em;
+    margin-bottom: 1em;
+  }
+  .document-viewer li {
+    margin-bottom: 0.5em;
+  }
+  .document-viewer strong, .document-viewer b {
+    font-weight: 600;
+  }
+  .document-viewer table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+  }
+  .document-viewer th, .document-viewer td {
+    border: 1px solid #e4e4e0;
+    padding: 8px;
+    text-align: left;
+  }
+  .document-viewer img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .markdown-summary ul {
+    list-style-type: disc;
+    margin-left: 1.5rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  .markdown-summary li {
+    margin-bottom: 0.5rem;
+  }
+  
+  .markdown-summary strong {
+    font-weight: 600;
+    color: #1e3a8a; /* Blue-900 */
+  }
+
+  .markdown-summary p {
+    margin-bottom: 0.75rem;
+  }
+}
+@layer base {
+  .theme {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif
+  }
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 5.9% 10%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 240 4.9% 83.9%;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
