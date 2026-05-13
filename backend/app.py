@@ -1,17 +1,14 @@
 import os
-import logging
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify
 from flask_cors import CORS
 from models import db
 from config import Config
 from utils.storage import resolve_storage_path
-from utils.observability import log_event
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
-    app.logger.setLevel(logging.INFO)
     
     # Initialize extensions
     CORS(app)

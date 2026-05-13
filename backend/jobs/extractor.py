@@ -4,7 +4,6 @@ import traceback
 import mammoth
 import docx
 from utils.storage import resolve_storage_path
-from utils.observability import log_event
 from utils.diffing import coerce_blocks, compute_block_diff, compute_visual_html_diff
 
 def extract_docx_blocks(filepath):
@@ -23,7 +22,6 @@ def extract_docx_blocks(filepath):
             continue
             
         # Detect if this is a header to update context
-        # Most DOCX headers use 'Heading 1', 'Heading 2', etc.
         style_name = para.style.name if para.style else ""
         if style_name.startswith('Heading'):
             current_section = para.text.strip()
@@ -57,7 +55,6 @@ def process_version(app, version_id):
             return
             
         try:
-            log_event(app.logger, "extract_started", version_id=version.id, document_id=version.document_id)
             version.status = 'processing'
             db.session.commit()
             
@@ -100,31 +97,11 @@ def process_version(app, version_id):
                     
                     version.stats_json = json.dumps(stats)
                     version.diff_json = json.dumps(changes)
-                    log_event(
-                        app.logger,
-                        "diff_computed",
-                        version_id=version.id,
-                        previous_version_id=prev_version.id,
-                        added_chars=stats.get('added_chars', 0),
-                        removed_chars=stats.get('removed_chars', 0),
-                        added_blocks=stats.get('added_blocks', 0),
-                        removed_blocks=stats.get('removed_blocks', 0),
-                        modified_blocks=stats.get('modified_blocks', 0)
-                    )
             
             version.status = 'success'
             db.session.commit()
-            log_event(app.logger, "extract_succeeded", version_id=version.id, document_id=version.document_id)
             
         except Exception as e:
             version.status = 'failed'
             version.error_message = str(e) + "\\n" + traceback.format_exc()
             db.session.commit()
-            log_event(
-                app.logger,
-                "extract_failed",
-                level="error",
-                version_id=version.id,
-                document_id=version.document_id,
-                error=str(e)
-            )

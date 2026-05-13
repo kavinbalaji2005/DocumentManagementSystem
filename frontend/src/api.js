@@ -1,8 +1,12 @@
 import axios from "axios";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5001",
+  baseURL: API_URL,
 });
+
+export const FILE_BASE_URL = `${API_URL}/files`;
 
 export const foldersApi = {
   getRootChildren: () =>

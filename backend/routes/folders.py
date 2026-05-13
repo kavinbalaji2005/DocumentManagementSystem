@@ -1,7 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from models import db, Folder, Document
 from utils.storage import resolve_document_directory
-from utils.observability import log_event
 
 folders_bp = Blueprint('folders', __name__, url_prefix='/folders')
 
@@ -110,16 +109,7 @@ def update_folder(folder_id):
             if _would_create_cycle(folder.id, new_parent_id):
                 return jsonify({'error': 'Folder cannot be moved into its own subfolder'}), 400
 
-        previous_parent_id = folder.parent_id
         folder.parent_id = new_parent_id
-        if previous_parent_id != new_parent_id:
-            log_event(
-                current_app.logger,
-                "folder_moved",
-                folder_id=folder.id,
-                from_parent_id=previous_parent_id,
-                to_parent_id=new_parent_id
-            )
 
     db.session.commit()
     return jsonify(folder.to_dict())
@@ -137,7 +127,6 @@ def get_delete_preview(folder_id):
         'subfolder_count': subfolder_count,
         'document_count': len(documents),
     }
-    log_event(current_app.logger, "folder_delete_preview", **payload)
     return jsonify(payload)
 
 @folders_bp.route('/<int:folder_id>', methods=['DELETE'])
@@ -152,25 +141,16 @@ def delete_folder(folder_id):
     import os
     import shutil
         
-    all_folders, all_docs = _collect_folder_tree(folder)
+    _, all_docs = _collect_folder_tree(folder)
     
     storage_root = current_app.config['STORAGE_ROOT']
-    log_event(
-        current_app.logger,
-        "folder_delete_started",
-        folder_id=folder.id,
-        folder_count=len(all_folders),
-        document_count=len(all_docs)
-    )
     
     for doc in all_docs:
         doc_dir = resolve_document_directory(storage_root, doc.id)
         if os.path.exists(doc_dir):
             shutil.rmtree(doc_dir)
-            log_event(current_app.logger, "document_storage_deleted", document_id=doc.id, path=doc_dir)
 
     db.session.delete(folder)
     db.session.commit()
-    log_event(current_app.logger, "folder_deleted", folder_id=folder.id)
     
     return jsonify({'message': 'Folder deleted successfully'})

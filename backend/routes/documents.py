@@ -4,7 +4,6 @@ import hashlib
 from flask import Blueprint, request, jsonify, current_app
 from models import db, Folder, Document, Version
 from utils.storage import resolve_document_directory
-from utils.observability import log_event
 
 documents_bp = Blueprint('documents', __name__, url_prefix='/documents')
 
@@ -47,13 +46,6 @@ def upload_document():
         return jsonify({'error': 'Destination folder not found'}), 404
             
     document_id = request.form.get('document_id')
-    log_event(
-        current_app.logger,
-        "upload_received",
-        filename=file.filename,
-        folder_id=folder_id,
-        document_id=document_id
-    )
     
     if document_id:
         document = Document.query.get_or_404(int(document_id))
@@ -82,15 +74,6 @@ def upload_document():
     verified_hash = compute_sha256(final_path)
     if verified_hash != file_hash:
         os.remove(final_path)
-        log_event(
-            current_app.logger,
-            "upload_checksum_failed",
-            level="error",
-            document_id=document.id,
-            version_number=document.current_version_number,
-            expected_hash=file_hash,
-            actual_hash=verified_hash
-        )
         return jsonify({'error': 'Checksum verification failed after writing file.'}), 500
     
     # Relative path for DB
@@ -106,15 +89,6 @@ def upload_document():
     )
     db.session.add(version)
     db.session.commit()
-    log_event(
-        current_app.logger,
-        "upload_saved",
-        document_id=document.id,
-        version_id=version.id,
-        version_number=version.version_number,
-        file_size=file_size,
-        file_hash=file_hash
-    )
     
     # Trigger background extraction job
     import threading
@@ -123,7 +97,6 @@ def upload_document():
     thread = threading.Thread(target=process_version, args=(app, version.id))
     thread.daemon = True
     thread.start()
-    log_event(current_app.logger, "extract_job_enqueued", version_id=version.id, document_id=document.id)
          
     return jsonify(document.to_dict()), 201
 
@@ -149,16 +122,7 @@ def update_document(doc_id):
         if new_folder_id is not None and not Folder.query.get(new_folder_id):
             return jsonify({'error': 'Destination folder not found'}), 404
 
-        previous_folder_id = document.folder_id
         document.folder_id = new_folder_id
-        if previous_folder_id != new_folder_id:
-            log_event(
-                current_app.logger,
-                "document_moved",
-                document_id=document.id,
-                from_folder_id=previous_folder_id,
-                to_folder_id=new_folder_id
-            )
          
     db.session.commit()
     return jsonify(document.to_dict())
@@ -172,11 +136,9 @@ def delete_document(doc_id):
     doc_dir = resolve_document_directory(storage_root, document.id)
     if os.path.exists(doc_dir):
         shutil.rmtree(doc_dir)
-        log_event(current_app.logger, "document_storage_deleted", document_id=document.id, path=doc_dir)
          
     db.session.delete(document)
     db.session.commit()
-    log_event(current_app.logger, "document_deleted", document_id=document.id)
     return jsonify({'message': 'Document deleted successfully'})
 
 @documents_bp.route('/<int:doc_id>/versions', methods=['GET'])

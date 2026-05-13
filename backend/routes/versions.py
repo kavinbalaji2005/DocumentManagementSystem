@@ -3,7 +3,6 @@ import json
 from flask import Blueprint, request, jsonify, current_app
 from models import db, Version
 from utils.storage import resolve_storage_path, resolve_document_directory
-from utils.observability import log_event
 from utils.diffing import coerce_blocks, compute_block_diff
 
 versions_bp = Blueprint('versions', __name__, url_prefix='/versions')
@@ -47,14 +46,6 @@ def get_diff():
                 stats = json.loads(to_version.stats_json)
             except (TypeError, ValueError, json.JSONDecodeError):
                 stats = {}
-                
-        log_event(
-            current_app.logger,
-            "diff_served_precomputed",
-            from_version_id=None,
-            to_version_id=to_version_id,
-            has_diff=bool(to_version.diff_html)
-        )
 
         return jsonify({
             'diff_html': to_version.diff_html,
@@ -107,16 +98,6 @@ def get_diff():
     ).first()
     ai_summary = to_version.ai_summary if previous_version and previous_version.id == from_version.id else None
 
-    log_event(
-        current_app.logger,
-        "diff_served_dynamic",
-        from_version_id=from_version_id,
-        to_version_id=to_version_id,
-        added_blocks=stats.get('added_blocks', 0),
-        removed_blocks=stats.get('removed_blocks', 0),
-        modified_blocks=stats.get('modified_blocks', 0)
-    )
-
     return jsonify({
         'diff_html': diff_html,
         'stats': stats,
@@ -134,7 +115,6 @@ def update_version(version_id):
         version.comment = data['comment']
         
     db.session.commit()
-    log_event(current_app.logger, "version_updated", version_id=version.id, document_id=version.document_id)
     return jsonify(version.to_dict())
 
 @versions_bp.route('/<int:version_id>/restore', methods=['POST'])
@@ -168,13 +148,6 @@ def restore_version(version_id):
     
     db.session.add(new_version)
     db.session.commit()
-    log_event(
-        current_app.logger,
-        "version_restored",
-        source_version_id=version.id,
-        restored_version_id=new_version.id,
-        document_id=document.id
-    )
     
     # Trigger background extraction job
     import threading
@@ -183,6 +156,5 @@ def restore_version(version_id):
     thread = threading.Thread(target=process_version, args=(app, new_version.id))
     thread.daemon = True
     thread.start()
-    log_event(current_app.logger, "extract_job_enqueued", version_id=new_version.id, document_id=document.id)
         
     return jsonify(new_version.to_dict()), 201

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import * as docx from "docx-preview";
 import HtmlDiff from "htmldiff-js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { documentsApi, versionsApi, aiApi } from "@/api";
+import { documentsApi, versionsApi, aiApi, FILE_BASE_URL } from "@/api";
 import { format } from "date-fns";
 import {
   FileText,
@@ -384,7 +384,7 @@ export function DocumentViewer({ documentId, onClose }) {
 
   const handleDownload = () => {
     if (!activeVersion) return;
-    window.location.href = `http://localhost:5000/files/${activeVersion.storage_path}`;
+    window.location.href = `${FILE_BASE_URL}/${activeVersion.storage_path}`;
   };
 
   return (
@@ -474,7 +474,7 @@ export function DocumentViewer({ documentId, onClose }) {
             {activeVersion?.status === "success" && viewMode === "normal" && (
               <div className="w-full flex-1">
                 <DocxRenderer
-                  url={`http://localhost:5001/files/${activeVersion.storage_path}`}
+                  url={`${FILE_BASE_URL}/${activeVersion.storage_path}`}
                 />
               </div>
             )}
@@ -487,7 +487,7 @@ export function DocumentViewer({ documentId, onClose }) {
                   <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 p-4">
                     <div className="flex justify-between items-start">
                       <div className="flex items-center text-blue-800 font-medium mb-2">
-                        <Wand2 className="w-4 h-4 mr-2" /> AI Summary of Changes
+                        <Wand2 className="w-4 h-4 mr-2" /> AI Diff Summary
                       </div>
                       {(() => {
                         const hasChanges =
@@ -497,7 +497,6 @@ export function DocumentViewer({ documentId, onClose }) {
                             (diffContent.stats.modified_blocks || 0) > 0 ||
                             (diffContent.stats.added_blocks || 0) > 0 ||
                             (diffContent.stats.removed_blocks || 0) > 0);
-
                         return (
                           <Button
                             size="sm"
@@ -607,8 +606,8 @@ export function DocumentViewer({ documentId, onClose }) {
                     return (
                       <div className="w-full flex-1">
                         <DocxDiffRenderer
-                          oldUrl={`http://localhost:5001/files/${previousVersion?.storage_path}`}
-                          newUrl={`http://localhost:5001/files/${activeVersion?.storage_path}`}
+                          oldUrl={`${FILE_BASE_URL}/${previousVersion?.storage_path}`}
+                          newUrl={`${FILE_BASE_URL}/${activeVersion?.storage_path}`}
                         />
                       </div>
                     );

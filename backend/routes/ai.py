@@ -2,11 +2,10 @@ import json
 from flask import Blueprint, request, jsonify, current_app
 import openai
 from models import Version
-from utils.observability import log_event
 
 ai_bp = Blueprint('ai', __name__, url_prefix='/ai')
 
-SYSTEM_INSTRUCTION = """You are a Senior Document Analyst. You will receive a list of changes grouped by their document SECTION.
+SYSTEM_INSTRUCTION = """You are a Document Analyst. You will receive a list of changes grouped by their document SECTION.
 
 Your task is to provide a clean, high-level summary of only the most significant changes.
 
@@ -19,14 +18,11 @@ MARKDOWN STRUCTURE:
 - [Concise bullet]
 
 RULES:
-- **Use Section Context**: If a change is in a specific section, mention it if relevant.
 - **Be Highly Selective**: Only report changes that significantly alter the document's meaning or data. Omit minor details.
 - **Extreme Brevity**: Use sentence fragments.
 - **Formatting**: Use the exact headers shown above. Omit a header if its category has no major changes.
 - **Delta**: For modifications, use the format: "**Old Value** → **New Value**".
 - **Direct Output**: No preamble and no sign-off. Jump straight to the headers."""
-
-
 
 def _clean_text(value):
     if value is None:
@@ -107,7 +103,6 @@ def summarize_diff():
         return jsonify({'error': 'version_id is required'}), 400
         
     version = Version.query.get_or_404(version_id)
-    log_event(current_app.logger, "ai_summary_requested", version_id=version.id, document_id=version.document_id)
     
     if not version.diff_json:
         return jsonify({'error': 'No diff available to summarize. Document might not have previous versions.'}), 400
@@ -115,29 +110,15 @@ def summarize_diff():
     try:
         changes = json.loads(version.diff_json)
     except Exception as e:
-        log_event(current_app.logger, "ai_summary_failed", level="error", version_id=version.id, error=str(e))
         return jsonify({'error': 'Failed to parse diff_json'}), 500
 
     added, removed, modified = _categorize_changes(changes)
     if not added and not removed and not modified:
-        log_event(current_app.logger, "ai_summary_skipped", version_id=version.id, reason="no_meaningful_changes")
         return jsonify({'summary': 'No meaningful changes detected.'})
 
     prompt = _build_prompt(added, removed, modified)
-    log_event(
-        current_app.logger,
-        "ai_summary_prompt_built",
-        version_id=version.id,
-        added_count=len(added),
-        removed_count=len(removed),
-        modified_count=len(modified),
-        prompt_chars=len(prompt)
-    )
         
     api_key = current_app.config.get('OPENROUTER_API_KEY')
-    if not api_key:
-        log_event(current_app.logger, "ai_summary_skipped", version_id=version.id, reason="missing_api_key")
-        return jsonify({'summary': 'AI Summarization is not configured (missing OPENROUTER_API_KEY).'})
         
     try:
         client = openai.OpenAI(
@@ -161,10 +142,8 @@ def summarize_diff():
         version.ai_summary = summary
         from models import db
         db.session.commit()
-        log_event(current_app.logger, "ai_summary_generated", version_id=version.id, summary_chars=len(summary or ""))
         
         return jsonify({'summary': summary})
         
     except Exception as e:
-        log_event(current_app.logger, "ai_summary_failed", level="error", version_id=version.id, error=str(e))
         return jsonify({'error': f'AI Summarization failed: {str(e)}'}), 500
