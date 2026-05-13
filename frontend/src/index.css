@@ -9,7 +9,7 @@
     max-width: 780px;
     margin: 0 auto;
     padding: 64px 80px;
-    font-family: 'Georgia', serif;
+    font-family: "Georgia", serif;
     font-size: 14px;
     line-height: 1.8;
     color: #1a1a1a;
@@ -17,32 +17,41 @@
     border-radius: 4px;
   }
 
-  .document-viewer.diff-mode ins {
-    background: #dcfce7;
-    color: #15803d;
-    text-decoration: none;
+  .diff-mode-renderer ins {
+    background: #dcfce7 !important;
+    color: #15803d !important;
+    text-decoration: none !important;
     border-radius: 2px;
     padding: 0 1px;
   }
 
-  .document-viewer.diff-mode del {
-    background: #fee2e2;
-    color: #b91c1c;
-    text-decoration: line-through;
+  .diff-mode-renderer del {
+    background: #fee2e2 !important;
+    color: #b91c1c !important;
+    text-decoration: line-through !important;
     border-radius: 2px;
     padding: 0 1px;
   }
 
   /* Document HTML Element Styling */
-  .document-viewer h1, .document-viewer h2, .document-viewer h3, .document-viewer h4 {
+  .document-viewer h1,
+  .document-viewer h2,
+  .document-viewer h3,
+  .document-viewer h4 {
     font-weight: 600;
     margin-top: 1.5em;
     margin-bottom: 0.5em;
     color: #1a1a1a;
   }
-  .document-viewer h1 { font-size: 1.8em; } 
-  .document-viewer h2 { font-size: 1.5em; } 
-  .document-viewer h3 { font-size: 1.3em; }
+  .document-viewer h1 {
+    font-size: 1.8em;
+  }
+  .document-viewer h2 {
+    font-size: 1.5em;
+  }
+  .document-viewer h3 {
+    font-size: 1.3em;
+  }
   .document-viewer p {
     margin-bottom: 1em;
   }
@@ -59,7 +68,8 @@
   .document-viewer li {
     margin-bottom: 0.5em;
   }
-  .document-viewer strong, .document-viewer b {
+  .document-viewer strong,
+  .document-viewer b {
     font-weight: 600;
   }
   .document-viewer table {
@@ -67,7 +77,8 @@
     border-collapse: collapse;
     margin-bottom: 1em;
   }
-  .document-viewer th, .document-viewer td {
+  .document-viewer th,
+  .document-viewer td {
     border: 1px solid #e4e4e0;
     padding: 8px;
     text-align: left;
@@ -77,30 +88,57 @@
     height: auto;
   }
 
-  .markdown-summary ul {
+  .markdown-summary ul,
+  .version-comment-markdown ul {
     list-style-type: disc;
     margin-left: 1.5rem;
     margin-top: 0.75rem;
     margin-bottom: 0.75rem;
   }
-  
-  .markdown-summary li {
+
+  .markdown-summary li,
+  .version-comment-markdown li {
     margin-bottom: 0.5rem;
   }
-  
+
   .markdown-summary strong {
     font-weight: 600;
     color: #1e3a8a; /* Blue-900 */
   }
 
-  .markdown-summary p {
+  .version-comment-markdown strong {
+    font-weight: 600;
+  }
+
+  .markdown-summary p,
+  .version-comment-markdown p {
     margin-bottom: 0.75rem;
+  }
+
+  .version-comment-markdown p:last-child {
+    margin-bottom: 0;
+  }
+
+  .version-comment-markdown h1,
+  .version-comment-markdown h2,
+  .version-comment-markdown h3,
+  .version-comment-markdown h4,
+  .version-comment-markdown h5,
+  .version-comment-markdown h6 {
+    margin-top: 0.25rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #374151;
   }
 }
 @layer base {
   .theme {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif
+    --font-sans: "Geist Variable", sans-serif;
   }
   :root {
     --background: 0 0% 100%;

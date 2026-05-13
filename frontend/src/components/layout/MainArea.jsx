@@ -208,13 +208,8 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
                     <span>{item.child_count} items</span>
                   ) : (
                     <div className="flex flex-col gap-1 w-full">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center">
                         <span>v{item.current_version_number}</span>
-                        <span
-                          className={`capitalize ${item.extraction_status === "failed" ? "text-red-500" : item.extraction_status === "pending" ? "text-amber-500" : "text-green-500"}`}
-                        >
-                          {item.extraction_status}
-                        </span>
                       </div>
                       <span className="text-[10px] text-neutral-400">
                         Updated {formatDistanceToNow(new Date(item.updated_at))}{" "}

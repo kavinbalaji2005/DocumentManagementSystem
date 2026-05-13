@@ -1,7 +1,6 @@
 import json
 from flask import Blueprint, request, jsonify, current_app
-from google import genai
-from google.genai import types
+import openai
 from models import Version
 from utils.observability import log_event
 
@@ -135,23 +134,26 @@ def summarize_diff():
         prompt_chars=len(prompt)
     )
         
-    api_key = current_app.config.get('GEMINI_API_KEY')
+    api_key = current_app.config.get('OPENROUTER_API_KEY')
     if not api_key:
         log_event(current_app.logger, "ai_summary_skipped", version_id=version.id, reason="missing_api_key")
-        return jsonify({'summary': 'AI Summarization is not configured (missing GEMINI_API_KEY).'})
+        return jsonify({'summary': 'AI Summarization is not configured (missing OPENROUTER_API_KEY).'})
         
     try:
-        client = genai.Client(api_key=api_key)
-        
-        response = client.models.generate_content(
-            model='gemini-3-flash-preview',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-            )
+        client = openai.OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
         )
         
-        summary = response.text
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-120b:free",
+            messages=[
+                {"role": "system", "content": SYSTEM_INSTRUCTION},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        summary = response.choices[0].message.content
         if not summary or not str(summary).strip():
             summary = "AI summary generation resulted in an empty response. This can happen if the changes are too subtle for the model or due to provider rate limits. Please try regenerating in a moment."
         

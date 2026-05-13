@@ -28,5 +28,5 @@ class Config:
         STORAGE_ROOT
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+    OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
     MAX_CONTENT_LENGTH = 20 * 1024 * 1024 # 20MB

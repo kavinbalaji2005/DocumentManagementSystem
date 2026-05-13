@@ -22,7 +22,7 @@ def get_diff():
     # from=v1_id & to=v2_id
     from_id = request.args.get('from')
     to_id = request.args.get('to')
-    
+
     if not to_id:
         return jsonify({'error': 'to parameter is required'}), 400
 
@@ -47,7 +47,7 @@ def get_diff():
                 stats = json.loads(to_version.stats_json)
             except (TypeError, ValueError, json.JSONDecodeError):
                 stats = {}
-
+                
         log_event(
             current_app.logger,
             "diff_served_precomputed",

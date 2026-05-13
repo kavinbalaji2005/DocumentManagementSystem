@@ -30,6 +30,7 @@
     "date-fns": "^4.1.0",
     "diff-match-patch": "^1.0.5",
     "docx-preview": "^0.3.7",
+    "htmldiff-js": "^1.0.5",
     "jszip": "^3.10.1",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",

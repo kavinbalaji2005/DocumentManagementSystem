@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import * as docx from "docx-preview";
+import HtmlDiff from "htmldiff-js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { documentsApi, versionsApi, aiApi } from "@/api";
 import { format } from "date-fns";
@@ -22,6 +23,16 @@ import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { UploadDialog } from "@/components/layout/Dialogs";
 
@@ -54,7 +65,16 @@ function DocxRenderer({ url }) {
         });
       })
       .then(() => {
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          if (containerRef.current) {
+            containerRef.current.innerHTML =
+              containerRef.current.innerHTML.replace(
+                /[\uf0b7\uf0a7\uf0d8\uf0fc]/g,
+                "•",
+              );
+          }
+          setLoading(false);
+        }
       })
       .catch((err) => {
         if (isMounted) {
@@ -86,6 +106,108 @@ function DocxRenderer({ url }) {
   );
 }
 
+function DocxDiffRenderer({ oldUrl, newUrl }) {
+  const containerRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+    setError(null);
+
+    if (containerRef.current) {
+      containerRef.current.innerHTML = "";
+    }
+
+    Promise.all([
+      fetch(oldUrl).then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch old document");
+        return res.blob();
+      }),
+      fetch(newUrl).then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch new document");
+        return res.blob();
+      }),
+    ])
+      .then(async ([oldBlob, newBlob]) => {
+        if (!isMounted) return;
+
+        const oldDiv = document.createElement("div");
+        const newDiv = document.createElement("div");
+
+        await Promise.all([
+          docx.renderAsync(oldBlob, oldDiv, null, {
+            className: "docx-preview-renderer",
+            inWrapper: false,
+            ignoreWidth: false,
+            ignoreHeight: false,
+          }),
+          docx.renderAsync(newBlob, newDiv, null, {
+            className: "docx-preview-renderer",
+            inWrapper: false,
+            ignoreWidth: false,
+            ignoreHeight: false,
+          }),
+        ]);
+
+        if (!isMounted) return;
+
+        const oldHtml = oldDiv.innerHTML.replace(
+          /[\uf0b7\uf0a7\uf0d8\uf0fc]/g,
+          "•",
+        );
+        const newHtml = newDiv.innerHTML.replace(
+          /[\uf0b7\uf0a7\uf0d8\uf0fc]/g,
+          "•",
+        );
+
+        const diffHtml =
+          HtmlDiff.default && typeof HtmlDiff.default.execute === "function"
+            ? HtmlDiff.default.execute(oldHtml, newHtml)
+            : HtmlDiff.execute(oldHtml, newHtml);
+
+        if (containerRef.current && isMounted) {
+          containerRef.current.innerHTML = diffHtml;
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (isMounted) {
+          console.error(err);
+          setError("Failed to compute visual diff.");
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [oldUrl, newUrl]);
+
+  return (
+    <div className="relative w-full flex flex-col diff-mode-renderer">
+      {loading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm z-10 min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-neutral-300 mb-4" />
+          <span className="text-neutral-500 font-medium">
+            Computing High-Fidelity Diff...
+          </span>
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center justify-center text-red-500 p-8 min-h-[400px]">
+          {error}
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="w-full flex flex-col docx-diff-container"
+      />
+    </div>
+  );
+}
+
 export function DocumentViewer({ documentId, onClose }) {
   const queryClient = useQueryClient();
   const [activeVersionId, setActiveVersionId] = useState(null);
@@ -94,6 +216,7 @@ export function DocumentViewer({ documentId, onClose }) {
   const [editingVersionId, setEditingVersionId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editComment, setEditComment] = useState("");
+  const [restoreTargetVersion, setRestoreTargetVersion] = useState(null);
 
   // Fetch document metadata
   const { data: document, isLoading: docLoading } = useQuery({
@@ -116,7 +239,9 @@ export function DocumentViewer({ documentId, onClose }) {
         setActiveVersionId(versions[0].id);
       } else if (versions.length > prevVersionCountRef.current) {
         // A new version was added (via upload/restore), auto-select the newest one
-        const newestVersion = [...versions].sort((a, b) => b.version_number - a.version_number)[0];
+        const newestVersion = [...versions].sort(
+          (a, b) => b.version_number - a.version_number,
+        )[0];
         if (newestVersion) {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setActiveVersionId(newestVersion.id);
@@ -134,7 +259,12 @@ export function DocumentViewer({ documentId, onClose }) {
   const compareFromVersionId = previousVersion?.id ?? null;
 
   // Fetch diff content
-  const { data: diffContent, isLoading: diffLoading, isError: diffError, error: diffQueryError } = useQuery({
+  const {
+    data: diffContent,
+    isLoading: diffLoading,
+    isError: diffError,
+    error: diffQueryError,
+  } = useQuery({
     queryKey: ["versions", compareFromVersionId, activeVersion?.id, "diff"],
     queryFn: () => versionsApi.diff(compareFromVersionId, activeVersion?.id),
     enabled:
@@ -168,6 +298,7 @@ export function DocumentViewer({ documentId, onClose }) {
       queryClient.invalidateQueries({
         queryKey: ["documents", documentId, "versions"],
       });
+      setRestoreTargetVersion(null);
       toast({
         title: "Version restored",
         description:
@@ -293,7 +424,7 @@ export function DocumentViewer({ documentId, onClose }) {
       <div className="flex-1 flex overflow-hidden">
         {/* Main Content Area */}
         <div className="flex-1 overflow-auto bg-neutral-100 p-8">
-          <div className="max-w-4xl mx-auto w-full flex justify-between items-center mb-4">
+          <div className="max-w-4xl mx-auto w-full mb-4">
             <Tabs
               value={viewMode}
               onValueChange={setViewMode}
@@ -306,22 +437,6 @@ export function DocumentViewer({ documentId, onClose }) {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-
-            <div className="flex items-center text-sm text-neutral-500 bg-white px-3 py-1.5 rounded-full shadow-sm border border-neutral-200">
-              <span className="font-medium mr-2">
-                Version {activeVersion?.version_number}
-              </span>
-              {activeVersion?.status === "success" && (
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-              )}
-              {(activeVersion?.status === "pending" ||
-                activeVersion?.status === "processing") && (
-                <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-              )}
-              {activeVersion?.status === "failed" && (
-                <XCircle className="w-4 h-4 text-red-500" />
-              )}
-            </div>
           </div>
 
           <div className="max-w-4xl mx-auto w-full bg-white shadow-sm border border-neutral-200 rounded-md min-h-[800px] flex flex-col relative">
@@ -466,7 +581,9 @@ export function DocumentViewer({ documentId, onClose }) {
                             Comparison Failed
                           </h3>
                           <p className="text-sm text-red-500">
-                            {diffQueryError?.response?.data?.error || diffQueryError?.message || "An error occurred while computing the differences."}
+                            {diffQueryError?.response?.data?.error ||
+                              diffQueryError?.message ||
+                              "An error occurred while computing the differences."}
                           </p>
                         </div>
                       );
@@ -488,12 +605,12 @@ export function DocumentViewer({ documentId, onClose }) {
                     }
 
                     return (
-                      <div
-                        className="document-viewer diff-mode font-serif text-[14px] leading-[1.8] text-[#1a1a1a]"
-                        dangerouslySetInnerHTML={{
-                          __html: diffContent?.diff_html || "",
-                        }}
-                      />
+                      <div className="w-full flex-1">
+                        <DocxDiffRenderer
+                          oldUrl={`http://localhost:5001/files/${previousVersion?.storage_path}`}
+                          newUrl={`http://localhost:5001/files/${activeVersion?.storage_path}`}
+                        />
+                      </div>
                     );
                   })()}
                 </div>
@@ -614,8 +731,8 @@ export function DocumentViewer({ documentId, onClose }) {
                       </div>
 
                       {v.comment && (
-                        <div className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded border border-neutral-100 mb-2 italic">
-                          {v.comment}
+                        <div className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded border border-neutral-100 mb-2 version-comment-markdown">
+                          <ReactMarkdown>{v.comment}</ReactMarkdown>
                         </div>
                       )}
 
@@ -636,9 +753,7 @@ export function DocumentViewer({ documentId, onClose }) {
                                 title="Restore"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm("Restore this version?")) {
-                                    restoreMutation.mutate(v.id);
-                                  }
+                                  setRestoreTargetVersion(v);
                                 }}
                                 disabled={restoreMutation.isPending}
                               >
@@ -662,6 +777,45 @@ export function DocumentViewer({ documentId, onClose }) {
         documentId={documentId}
         documentName={document?.name}
       />
+
+      <AlertDialog
+        open={Boolean(restoreTargetVersion)}
+        onOpenChange={(open) => {
+          if (!open) setRestoreTargetVersion(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore this version?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will create a new latest version from{" "}
+              {restoreTargetVersion
+                ? `Version ${restoreTargetVersion.version_number}`
+                : "this version"}
+              . Existing versions will remain unchanged.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={restoreMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (!restoreTargetVersion) return;
+                restoreMutation.mutate(restoreTargetVersion.id);
+              }}
+              disabled={restoreMutation.isPending}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {restoreMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {restoreMutation.isPending ? "Restoring..." : "Restore version"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
