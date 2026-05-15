@@ -33,6 +33,11 @@
     padding: 0 1px;
   }
 
+  /* Hide deleted images to prevent duplicates from dynamically generated blob URLs */
+  .diff-mode-renderer del img {
+    display: none !important;
+  }
+
   /* Document HTML Element Styling */
   .document-viewer h1,
   .document-viewer h2,

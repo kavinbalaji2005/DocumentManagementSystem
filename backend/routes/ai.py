@@ -60,7 +60,6 @@ def _categorize_changes(changes):
 
 
 def _build_prompt(added, removed, modified):
-    # Group by section for hierarchical context
     sections = {}
     
     for item in added:
@@ -136,9 +135,8 @@ def summarize_diff():
         
         summary = response.choices[0].message.content
         if not summary or not str(summary).strip():
-            summary = "AI summary generation resulted in an empty response. This can happen if the changes are too subtle for the model or due to provider rate limits. Please try regenerating in a moment."
+            summary = "AI summary generation couldnt be generated. This can happen due to provider rate limits. Please try regenerating in a moment."
         
-        # Save summary to DB
         version.ai_summary = summary
         from models import db
         db.session.commit()

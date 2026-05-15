@@ -48,7 +48,6 @@ def get_diff():
                 stats = {}
 
         return jsonify({
-            'diff_html': to_version.diff_html,
             'stats': stats,
             'ai_summary': to_version.ai_summary
         })
@@ -70,7 +69,6 @@ def get_diff():
     # Optimization: if file hashes are identical, there are no changes
     if from_version.file_hash == to_version.file_hash:
         return jsonify({
-            'diff_html': '',
             'stats': {
                 'added_chars': 0,
                 'removed_chars': 0,
@@ -90,7 +88,7 @@ def get_diff():
         extracted_text=to_version.extracted_text
     )
 
-    diff_html, stats, _ = compute_block_diff(from_blocks, to_blocks)
+    _, stats, _ = compute_block_diff(from_blocks, to_blocks)
 
     previous_version = Version.query.filter_by(
         document_id=to_version.document_id,
@@ -99,7 +97,6 @@ def get_diff():
     ai_summary = to_version.ai_summary if previous_version and previous_version.id == from_version.id else None
 
     return jsonify({
-        'diff_html': diff_html,
         'stats': stats,
         'ai_summary': ai_summary
     })

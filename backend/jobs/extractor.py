@@ -1,16 +1,11 @@
-import os
 import json
 import traceback
 import mammoth
 import docx
 from utils.storage import resolve_storage_path
-from utils.diffing import coerce_blocks, compute_block_diff, compute_visual_html_diff
+from utils.diffing import coerce_blocks, compute_block_diff
 
 def extract_docx_blocks(filepath):
-    """
-    Extracts paragraphs and tables from a docx file into a list of block dicts.
-    Now tracks headers to provide hierarchical context to the AI.
-    """
     doc = docx.Document(filepath)
     blocks = []
     
@@ -86,14 +81,10 @@ def process_version(app, version_id):
                         blocks_json=prev_version.extracted_blocks_json,
                         extracted_text=prev_version.extracted_text
                     )
-                    # We use compute_block_diff for stats and AI-ready JSON
+                    # compute_block_diff for stats and AI-ready JSON
                     _, stats, changes = compute_block_diff(previous_blocks, blocks)
                     
-                    # We use compute_visual_html_diff for the high-fidelity UI view
-                    version.diff_html = compute_visual_html_diff(
-                        prev_version.extracted_html, 
-                        version.extracted_html
-                    )
+                    
                     
                     version.stats_json = json.dumps(stats)
                     version.diff_json = json.dumps(changes)

@@ -126,17 +126,40 @@ def compute_block_diff(old_blocks, new_blocks):
             old_text = old_segment[idx]
             new_text = new_segment[idx]
             block = new_blocks[j1 + idx]
-            inline_html, added_chars, removed_chars = _compute_inline_html_diff(old_text, new_text)
-            diff_html_parts.append(f'<p>{inline_html}</p>')
-            diff_changes.append({
-                'type': 'modified', 
-                'before': old_text, 
-                'after': new_text,
-                'section': block.get('section', 'General')
-            })
-            stats['modified_blocks'] += 1
-            stats['added_chars'] += added_chars
-            stats['removed_chars'] += removed_chars
+            old_block = old_blocks[i1 + idx]
+            
+            similarity = SequenceMatcher(None, old_text, new_text).ratio()
+
+            if similarity >= 0.5:
+                inline_html, added_chars, removed_chars = _compute_inline_html_diff(old_text, new_text)
+                diff_html_parts.append(f'<p>{inline_html}</p>')
+                diff_changes.append({
+                    'type': 'modified', 
+                    'before': old_text, 
+                    'after': new_text,
+                    'section': block.get('section', 'General')
+                })
+                stats['modified_blocks'] += 1
+                stats['added_chars'] += added_chars
+                stats['removed_chars'] += removed_chars
+            else:
+                diff_html_parts.append(f'<del>{_render_block_html(old_text)}</del>')
+                diff_changes.append({
+                    'type': 'removed', 
+                    'text': old_text,
+                    'section': old_block.get('section', 'General')
+                })
+                stats['removed_blocks'] += 1
+                stats['removed_chars'] += len(old_text)
+                
+                diff_html_parts.append(f'<ins>{_render_block_html(new_text)}</ins>')
+                diff_changes.append({
+                    'type': 'added', 
+                    'text': new_text,
+                    'section': block.get('section', 'General')
+                })
+                stats['added_blocks'] += 1
+                stats['added_chars'] += len(new_text)
 
         for idx in range(paired_count, len(old_segment)):
             text = old_segment[idx]
@@ -164,51 +187,4 @@ def compute_block_diff(old_blocks, new_blocks):
 
     return ''.join(diff_html_parts), stats, diff_changes
 
-def compute_visual_html_diff(old_html, new_html):
-    """
-    Computes a visual diff between two HTML strings by tokenizing them into
-    tags, words, and whitespace. This preserves the document structure (tables, headers)
-    while highlighting text changes.
-    """
-    import re
-    from difflib import SequenceMatcher
 
-    # Normalize newlines
-    old_html = (old_html or "").replace('\r\n', '\n')
-    new_html = (new_html or "").replace('\r\n', '\n')
-
-    # Tokenize: Tags are one token, non-whitespace text blocks are another, and whitespace is another.
-    token_pattern = re.compile(r'(<[^>]+>|[^<>\s]+|\s+)')
-    
-    old_tokens = token_pattern.findall(old_html)
-    new_tokens = token_pattern.findall(new_html)
-    
-    matcher = SequenceMatcher(a=old_tokens, b=new_tokens, autojunk=False)
-    
-    result_parts = []
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == 'equal':
-            result_parts.extend(new_tokens[j1:j2])
-        elif tag == 'insert':
-            for token in new_tokens[j1:j2]:
-                if token.startswith('<') or not token.strip():
-                    result_parts.append(token)
-                else:
-                    result_parts.append(f'<ins>{token}</ins>')
-        elif tag == 'delete':
-            for token in old_tokens[i1:i2]:
-                if not token.startswith('<') and token.strip():
-                    result_parts.append(f'<del>{token}</del>')
-        elif tag == 'replace':
-            # Delete old text tokens
-            for token in old_tokens[i1:i2]:
-                if not token.startswith('<') and token.strip():
-                    result_parts.append(f'<del>{token}</del>')
-            # Insert new tokens, preserving tags and ignoring pure whitespace changes
-            for token in new_tokens[j1:j2]:
-                if token.startswith('<') or not token.strip():
-                    result_parts.append(token)
-                else:
-                    result_parts.append(f'<ins>{token}</ins>')
-                    
-    return "".join(result_parts)
