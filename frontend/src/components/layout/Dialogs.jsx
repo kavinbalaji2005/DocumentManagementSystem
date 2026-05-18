@@ -109,10 +109,10 @@ function getDescendantFolderIds(folderId, folders) {
   return descendants;
 }
 
-export function CreateFolderDialog({ open, onOpenChange, parentId }) {
+export function CreateFolderDialog({ open, onOpenChange, parentId, folderPath }) {
   const { register, handleSubmit, reset } = useForm();
   const queryClient = useQueryClient();
-
+  const breadcrumbText = folderPath ? ["Home", ...folderPath.map(f => f.name)].join("/") : "Home";
   const mutation = useMutation({
     mutationFn: (data) => foldersApi.create(data.name, parentId),
     onSuccess: () => {
@@ -146,6 +146,10 @@ export function CreateFolderDialog({ open, onOpenChange, parentId }) {
         <DialogHeader>
           <DialogTitle>Create Folder</DialogTitle>
         </DialogHeader>
+        <p className="text-sm text-neutral-500 bg-neutral-50 p-2">
+          <strong>Current Location: </strong>
+            {breadcrumbText}
+        </p>
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="grid gap-4 py-4">
             <div className="flex flex-col gap-2">
@@ -184,10 +188,12 @@ export function UploadDialog({
   folderId,
   documentId = null,
   documentName = null,
+  folderPath,
+  nextVersionNumber
 }) {
   const [file, setFile] = useState(null);
   const queryClient = useQueryClient();
-
+  const breadcrumbText = folderPath ? ["Home", ...folderPath.map(f => f.name)].join("/") : "Home";
   const mutation = useMutation({
     mutationFn: () => documentsApi.upload(file, folderId, documentId),
     onSuccess: () => {
@@ -227,10 +233,16 @@ export function UploadDialog({
         <DialogHeader>
           <DialogTitle>
             {documentId
-              ? `Upload new version for ${documentName}`
+              ? `Upload Version ${nextVersionNumber || ''} for ${documentName}`
               : "Upload Document"}
           </DialogTitle>
         </DialogHeader>
+        {!documentId && (
+          <p className="text-sm text-neutral-500 bg-neutral-50 p-2">
+            <strong>Current Location: </strong>
+              {breadcrumbText}
+          </p>
+        )}
         <div className="grid gap-4 py-4">
           <div className="flex flex-col items-center justify-center w-full">
             <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-neutral-300 border-dashed rounded-lg cursor-pointer bg-neutral-50 hover:bg-neutral-100">
@@ -313,8 +325,7 @@ export function RenameDialog({ open, onOpenChange, item }) {
     },
     onError: (err) => {
       toast({
-        title: "Error renaming",
-        description: err.message,
+        title: "This File Name already exists !",
         variant: "destructive",
       });
     },

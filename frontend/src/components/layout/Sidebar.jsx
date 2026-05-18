@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DocxIcon } from "@/components/ui/DocxIcon";
 
 function FolderNode({
   folder,
@@ -90,7 +91,7 @@ function FolderNode({
               className="flex items-center py-1.5 pl-6 pr-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400"
               onClick={() => onSelectDocument(doc.id)}
             >
-              <FileText className="w-4 h-4 mr-2 text-neutral-400" />
+              <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
               <span className="truncate">{doc.name}</span>
             </div>
           ))}
@@ -148,7 +149,7 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
                 className="flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400 ml-5"
                 onClick={() => onSelectDocument(doc.id)}
               >
-                <FileText className="w-4 h-4 mr-2 text-neutral-400" />
+                <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
                 <span className="truncate">{doc.name}</span>
               </div>
             ))}

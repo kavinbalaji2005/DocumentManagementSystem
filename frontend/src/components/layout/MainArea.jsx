@@ -14,6 +14,7 @@ import {
   Home,
   ChevronRight,
 } from "lucide-react";
+import { DocxIcon } from "@/components/ui/DocxIcon";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,6 +30,7 @@ import {
   MoveDialog,
   DeleteDialog,
 } from "./Dialogs";
+import { folder } from "jszip";
 
 export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
@@ -164,13 +166,11 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
                 }
               >
                 <div className="flex justify-between items-start mb-3">
-                  <div
-                    className={`p-2 rounded-md ${item.type === "folder" ? "bg-primary/10 text-primary" : "bg-orange-500/10 text-orange-500"}`}
-                  >
+                  <div className="p-1 rounded-md">
                     {item.type === "folder" ? (
-                      <Folder className="w-6 h-6" />
+                      <Folder className="w-8 h-8 text-primary" />
                     ) : (
-                      <FileText className="w-6 h-6" />
+                      <DocxIcon className="w-10 h-10" />
                     )}
                   </div>
                   <DropdownMenu>
@@ -228,11 +228,13 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
         open={createFolderOpen}
         onOpenChange={setCreateFolderOpen}
         parentId={activeFolderId}
+        folderPath={folderPath}
       />
       <UploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         folderId={activeFolderId}
+        folderPath={folderPath}
       />
       <RenameDialog
         open={renameOpen}

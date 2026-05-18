@@ -52,6 +52,12 @@ def upload_document():
         document.current_version_number += 1
     else:
         document_name = request.form.get('name') or file.filename
+        
+        # Enforce unique document name within the target folder
+        existing = Document.query.filter_by(folder_id=folder_id, name=document_name).first()
+        if existing:
+            return jsonify({'error': f'A document named "{document_name}" already exists in this folder.'}), 409
+            
         document = Document(name=document_name, folder_id=folder_id, current_version_number=1)
         db.session.add(document)
         db.session.flush() # Get document.id
@@ -109,9 +115,8 @@ def get_document(doc_id):
 def update_document(doc_id):
     document = Document.query.get_or_404(doc_id)
     data = request.json or {}
-    
-    if 'name' in data:
-        document.name = data['name']
+    new_name = data.get('name', document.name)
+    new_folder_id = document.folder_id
 
     if 'folder_id' in data:
         try:
@@ -122,6 +127,15 @@ def update_document(doc_id):
         if new_folder_id is not None and not Folder.query.get(new_folder_id):
             return jsonify({'error': 'Destination folder not found'}), 404
 
+    # Enforce unique document name within the target folder
+    if new_name != document.name or new_folder_id != document.folder_id:
+        existing = Document.query.filter_by(folder_id=new_folder_id, name=new_name).first()
+        if existing and existing.id != document.id:
+            return jsonify({'error': f'A document named "{new_name}" already exists in the target folder.'}), 409
+
+    if 'name' in data:
+        document.name = new_name
+    if 'folder_id' in data:
         document.folder_id = new_folder_id
          
     db.session.commit()

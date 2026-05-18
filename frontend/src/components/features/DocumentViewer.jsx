@@ -19,6 +19,7 @@ import {
   RotateCcw,
   Copy,
 } from "lucide-react";
+import { DocxIcon } from "@/components/ui/DocxIcon";
 import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -337,7 +338,6 @@ export function DocumentViewer({ documentId, onClose }) {
       }),
   });
 
-  // Update Version (Name/Comment)
   const updateVersionMutation = useMutation({
     mutationFn: ({ id, name, comment }) =>
       versionsApi.update(id, { name, comment }),
@@ -401,7 +401,7 @@ export function DocumentViewer({ documentId, onClose }) {
             <ArrowLeft className="w-4 h-4 " />
           </Button>
           <div className="flex items-center">
-            <FileText className="w-5 h-5 text-neutral-500 mr-2" />
+            <DocxIcon className="w-5 h-5 mr-2 shrink-0" />
             <h1 className="font-semibold text-lg">{document?.name}</h1>
           </div>
         </div>
@@ -413,7 +413,7 @@ export function DocumentViewer({ documentId, onClose }) {
             onClick={handleDownload}
             disabled={!activeVersion || activeVersion.status !== "success"}
           >
-            <Download className="w-4 h-4 mr-2" /> Download Version
+            <Download className="w-4 h-4 mr-2" /> Download Version {activeVersion?.version_number}
           </Button>
           <Button size="sm" onClick={() => setUploadOpen(true)}>
             <RefreshCw className="w-4 h-4 mr-2" /> Update Version
@@ -487,7 +487,7 @@ export function DocumentViewer({ documentId, onClose }) {
                   <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 p-4">
                     <div className="flex justify-between items-start">
                       <div className="flex items-center text-blue-800 font-medium mb-2">
-                        <Wand2 className="w-4 h-4 mr-2" /> AI Diff Summary
+                        <Wand2 className="w-4 h-4 mr-2" /> AI Diff Summary for Version {previousVersion?.version_number} &rarr; {activeVersion?.version_number}
                       </div>
                       {(() => {
                         const hasChanges =
@@ -533,16 +533,23 @@ export function DocumentViewer({ documentId, onClose }) {
                             {diffContent.ai_summary}
                           </ReactMarkdown>
                         </div>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          className="h-7 text-xs text-blue-700 hover:bg-blue-100/50 hover:text-blue-800"
-                          onClick={() =>
-                            handleTransferToComment(diffContent.ai_summary)
-                          }
-                        >
-                          <Copy className="w-3 h-3 mr-2" /> Use as Comment
-                        </Button>
+                        <div className="flex justify-between items-end mt-2">
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            className="h-7 text-xs text-blue-700 hover:bg-blue-100/50 hover:text-blue-800"
+                            onClick={() =>
+                              handleTransferToComment(diffContent.ai_summary)
+                            }
+                          >
+                            <Copy className="w-3 h-3 mr-2" /> Use as Comment
+                          </Button>
+                          {diffContent.stats?.ai_prompt_tokens !== undefined && (
+                            <span className="text-xs text-blue-400/80 italic font-medium pr-2 pb-1">
+                            * Costed {diffContent.stats.ai_prompt_tokens} Input tokens and {diffContent.stats.ai_completion_tokens} Output tokens
+                            </span>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <p className="text-sm text-blue-600/70 italic">
@@ -775,6 +782,7 @@ export function DocumentViewer({ documentId, onClose }) {
         onOpenChange={setUploadOpen}
         documentId={documentId}
         documentName={document?.name}
+        nextVersionNumber={document?.current_version_number ? document.current_version_number + 1 : null}
       />
 
       <AlertDialog

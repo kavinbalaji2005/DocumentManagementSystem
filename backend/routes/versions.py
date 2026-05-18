@@ -1,3 +1,4 @@
+from sqlalchemy.orm.unitofwork import SaveUpdateState
 import os
 import json
 from flask import Blueprint, request, jsonify, current_app
@@ -95,6 +96,16 @@ def get_diff():
         version_number=to_version.version_number - 1
     ).first()
     ai_summary = to_version.ai_summary if previous_version and previous_version.id == from_version.id else None
+
+    if to_version.stats_json:
+        try:
+            saved_stats = json.loads(to_version.stats_json)
+            if 'ai_prompt_tokens' in saved_stats:
+                stats['ai_prompt_tokens'] = saved_stats['ai_prompt_tokens']
+            if 'ai_completion_tokens' in saved_stats:
+                stats['ai_completion_tokens'] = saved_stats['ai_completion_tokens']
+        except Exception:
+            pass
 
     return jsonify({
         'stats': stats,
