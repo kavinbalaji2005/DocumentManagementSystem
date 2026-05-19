@@ -22,8 +22,6 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname || "/";
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -32,7 +30,7 @@ export function LoginPage() {
       toast({
         title: "Logged in successfully",
       });
-      navigate(from, { replace: true });
+      navigate("/", { replace: true });
     } catch (error) {
       toast({
         title: "Login failed",

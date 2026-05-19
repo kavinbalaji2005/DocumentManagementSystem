@@ -22,6 +22,18 @@ export function AuditLogTab({ documentId, documentName }) {
       console.error("Failed to log audit export:", e);
     }
 
+    const actionMap = {
+      CREATE: "Create Document",
+      VERSION_UPLOAD: "Upload Version",
+      UPDATE: "Update Document",
+      DOWNLOAD: "Download File",
+      VERSION_RESTORE: "Restore Version",
+      VERSION_UPDATE: "Update Version Info",
+      AI_SUMMARIZE: "AI Summarize",
+      AI_REGENERATE: "Regenerate AI Summary",
+      EXPORT_AUDIT: "Export Audit Log",
+    };
+
     const headers = ["Timestamp", "User ID", "User Role", "Action", "Details"];
     const csvContent = [
       headers.join(","),
@@ -29,8 +41,9 @@ export function AuditLogTab({ documentId, documentName }) {
         const timestamp = format(new Date(log.created_at), "dd/MM/yyyy HH:mm:ss");
         const userId = log.user?.employee_id || "System";
         const userRole = log.user?.role || "System";
-        const action = log.action;
-        const details = log.details ? `"${log.details.replace(/"/g, '""')}"` : "";
+        const action = actionMap[log.action] || log.action;
+        const detailsText = formatDetails(log.action, log.details) || "";
+        const details = detailsText ? `"${detailsText.replace(/"/g, '""')}"` : "";
         return `${timestamp},${userId},${userRole},${action},${details}`;
       }),
     ].join("\n");
@@ -69,6 +82,9 @@ export function AuditLogTab({ documentId, documentName }) {
   }
 
   const formatDetails = (action, details) => {
+    if (action === "EXPORT_AUDIT") {
+      return "Exported audit log";
+    }
     if (!details) return null;
     try {
       const parsed = JSON.parse(details);
@@ -76,7 +92,8 @@ export function AuditLogTab({ documentId, documentName }) {
         return `Version ${parsed.version}`;
       }
       if (action === "DOWNLOAD") {
-        return `Downloaded: ${parsed.filename}`;
+        const verStr = parsed.version ? ` (Version ${parsed.version}${parsed.version_name ? ` - ${parsed.version_name}` : ""})` : "";
+        return `Downloaded: ${parsed.filename}${verStr}`;
       }
       if (action === "UPDATE") {
         const changes = [];
@@ -89,6 +106,9 @@ export function AuditLogTab({ documentId, documentName }) {
       }
       if (action === "AI_SUMMARIZE") {
         return `Summarized Version ${parsed.version}`;
+      }
+      if (action === "AI_REGENERATE") {
+        return `Regenerated AI Summary for Version ${parsed.version}`;
       }
       if (action === "VERSION_RESTORE") {
         return `Restored Version ${parsed.restored_from_version} (created Version ${parsed.new_version})`;
@@ -154,7 +174,7 @@ export function AuditLogTab({ documentId, documentName }) {
                       ? "bg-green-50 text-green-700 border border-green-100"
                       : log.action === "CREATE"
                       ? "bg-blue-50 text-blue-700 border border-blue-100"
-                      : log.action === "AI_SUMMARIZE"
+                      : log.action === "AI_SUMMARIZE" || log.action === "AI_REGENERATE"
                       ? "bg-indigo-50 text-indigo-700 border border-indigo-100"
                       : log.action.startsWith("VERSION_")
                       ? "bg-amber-50 text-amber-700 border border-amber-100"
@@ -169,6 +189,7 @@ export function AuditLogTab({ documentId, documentName }) {
                         VERSION_RESTORE: "Restore Version",
                         VERSION_UPDATE: "Update Version Info",
                         AI_SUMMARIZE: "AI Summarize",
+                        AI_REGENERATE: "Regenerate AI Summary",
                         EXPORT_AUDIT: "Export Audit Log",
                       };
                       return actionMap[log.action] || log.action;

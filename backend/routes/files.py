@@ -28,7 +28,20 @@ def serve_file(relative_path):
                 if denied:
                     return denied
                 from utils.audit import log_document_action
-                log_document_action(doc_id, 'DOWNLOAD', {'filename': parts[2]})
+                from models import Version, Document
+                version = Version.query.filter_by(storage_path=relative_path).first()
+                doc = Document.query.get(doc_id)
+                
+                doc_name = doc.name if doc else parts[2]
+                version_num = version.version_number if version else None
+                version_name = version.name if version else None
+                
+                log_details = {
+                    'filename': doc_name,
+                    'version': version_num,
+                    'version_name': version_name
+                }
+                log_document_action(doc_id, 'DOWNLOAD', log_details)
             else:
                 # Viewing/rendering requires document:view
                 denied = require_permission('document', doc_id, 'document:view')

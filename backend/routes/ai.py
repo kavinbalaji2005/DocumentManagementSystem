@@ -155,12 +155,14 @@ def summarize_diff():
         except Exception:
             pass
         
+        is_regenerate = bool(version.ai_summary)
         version.ai_summary = summary
         from models import db
         db.session.commit()
         
         from utils.audit import log_document_action
-        log_document_action(version.document_id, 'AI_SUMMARIZE', {'version': version.version_number})
+        action_type = 'AI_REGENERATE' if is_regenerate else 'AI_SUMMARIZE'
+        log_document_action(version.document_id, action_type, {'version': version.version_number})
         
         return jsonify({'summary': summary})
         
