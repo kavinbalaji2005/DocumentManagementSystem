@@ -1,7 +1,9 @@
 import json
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 import openai
 from models import Version
+from routes.auth import token_required
+from utils.permissions import require_permission
 
 ai_bp = Blueprint('ai', __name__, url_prefix='/ai')
 
@@ -94,6 +96,7 @@ def _build_prompt(added, removed, modified):
 
 
 @ai_bp.route('/summarize-diff', methods=['POST'])
+@token_required
 def summarize_diff():
     data = request.get_json(silent=True) or {}
     version_id = data.get('version_id')
@@ -102,6 +105,11 @@ def summarize_diff():
         return jsonify({'error': 'version_id is required'}), 400
         
     version = Version.query.get_or_404(version_id)
+    
+    # Permission check via document
+    denied = require_permission('document', version.document_id, 'version:view')
+    if denied:
+        return denied
     
     if not version.diff_json:
         return jsonify({'error': 'No diff available to summarize. Document might not have previous versions.'}), 400
@@ -150,6 +158,9 @@ def summarize_diff():
         version.ai_summary = summary
         from models import db
         db.session.commit()
+        
+        from utils.audit import log_document_action
+        log_document_action(version.document_id, 'AI_SUMMARIZE', {'version': version.version_number})
         
         return jsonify({'summary': summary})
         

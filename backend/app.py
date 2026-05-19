@@ -20,11 +20,13 @@ def create_app():
     from routes.ai import ai_bp
     from routes.versions import versions_bp
     from routes.files import files_bp
+    from routes.auth import auth_bp
     app.register_blueprint(folders_bp)
     app.register_blueprint(documents_bp)
     app.register_blueprint(ai_bp)
     app.register_blueprint(versions_bp)
     app.register_blueprint(files_bp)
+    app.register_blueprint(auth_bp)
     
     # Setup storage directory
     storage_root = os.path.abspath(app.config['STORAGE_ROOT'])
@@ -40,6 +42,20 @@ def create_app():
     
     with app.app_context():
         db.create_all()
+        
+        # Create default admin if not exists
+        from models import User
+        if not User.query.filter_by(employee_id='ELV0001').first():
+            admin_pass = app.config.get('DEFAULT_ADMIN_PASSWORD', 'admin')
+            if admin_pass == 'admin':
+                print("WARNING: Using default 'admin' password. Please set DEFAULT_ADMIN_PASSWORD in .env for production.")
+            
+            admin = User(employee_id='ELV0001', role='Admin')
+            admin.set_password(admin_pass)
+            db.session.add(admin)
+            db.session.commit()
+            print("Created default admin user ELV0001")
+
         # Recover pending jobs that are stale (> 2 minutes old)
         from models import Version
         

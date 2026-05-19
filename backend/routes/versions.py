@@ -1,16 +1,25 @@
 from sqlalchemy.orm.unitofwork import SaveUpdateState
 import os
 import json
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 from models import db, Version
 from utils.storage import resolve_storage_path, resolve_document_directory
 from utils.diffing import coerce_blocks, compute_block_diff
+from routes.auth import token_required
+from utils.permissions import require_permission
 
 versions_bp = Blueprint('versions', __name__, url_prefix='/versions')
 
 @versions_bp.route('/<int:version_id>/view', methods=['GET'])
+@token_required
 def view_version(version_id):
     version = Version.query.get_or_404(version_id)
+    
+    # Permission check via document
+    denied = require_permission('document', version.document_id, 'version:view')
+    if denied:
+        return denied
+    
     return jsonify({
         'extracted_html': version.extracted_html,
         'status': version.status,
@@ -18,6 +27,7 @@ def view_version(version_id):
     })
 
 @versions_bp.route('/diff', methods=['GET'])
+@token_required
 def get_diff():
     # from=v1_id & to=v2_id
     from_id = request.args.get('from')
@@ -39,6 +49,11 @@ def get_diff():
             return jsonify({'error': 'from must be an integer'}), 400
 
     to_version = Version.query.get_or_404(to_version_id)
+    
+    # Permission check via document
+    denied = require_permission('document', to_version.document_id, 'version:view')
+    if denied:
+        return denied
 
     if from_version_id is None:
         stats = {}
@@ -113,22 +128,46 @@ def get_diff():
     })
 
 @versions_bp.route('/<int:version_id>', methods=['PATCH'])
+@token_required
 def update_version(version_id):
     version = Version.query.get_or_404(version_id)
+    
+    # Permission check via document
+    denied = require_permission('document', version.document_id, 'document:update')
+    if denied:
+        return denied
+    
     data = request.get_json() or {}
     
-    if 'name' in data:
+    changes = {}
+    if 'name' in data and data['name'] != version.name:
+        changes['name'] = {'old': version.name, 'new': data['name']}
         version.name = data['name']
-    if 'comment' in data:
+    if 'comment' in data and data['comment'] != version.comment:
+        changes['comment'] = {'old': version.comment, 'new': data['comment']}
         version.comment = data['comment']
         
     db.session.commit()
+    
+    if changes:
+        from utils.audit import log_document_action
+        log_document_action(version.document_id, 'VERSION_UPDATE', {
+            'version': version.version_number,
+            'changes': changes
+        })
+        
     return jsonify(version.to_dict())
 
 @versions_bp.route('/<int:version_id>/restore', methods=['POST'])
+@token_required
 def restore_version(version_id):
     version = Version.query.get_or_404(version_id)
     document = version.document
+    
+    # Permission check via document
+    denied = require_permission('document', document.id, 'version:create')
+    if denied:
+        return denied
     
     document.current_version_number += 1
     
@@ -156,6 +195,12 @@ def restore_version(version_id):
     
     db.session.add(new_version)
     db.session.commit()
+    
+    from utils.audit import log_document_action
+    log_document_action(document.id, 'VERSION_RESTORE', {
+        'restored_from_version': version.version_number,
+        'new_version': document.current_version_number
+    })
     
     # Trigger background extraction job
     import threading

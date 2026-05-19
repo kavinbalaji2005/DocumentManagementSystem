@@ -5,6 +5,11 @@ import { DocumentViewer } from "@/components/features/DocumentViewer";
 import { Toaster } from "@/components/ui/toaster";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 
+import { AuthProvider } from "@/context/AuthContext";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { LoginPage } from "@/pages/LoginPage";
+import { UserManagementPage } from "@/pages/UserManagementPage";
+
 function FileManagerView() {
   const { folderId } = useParams();
   const activeFolderId = folderId ? parseInt(folderId, 10) : null;
@@ -36,6 +41,31 @@ function FileManagerView() {
   );
 }
 
+function UserManagementView() {
+  const navigate = useNavigate();
+
+  return (
+    <ResizablePanelGroup direction="horizontal" className="h-full w-full">
+      <ResizablePanel
+        defaultSize={20}
+        minSize={15}
+        maxSize={30}
+        collapsible={false}
+        collapsedSize={0}>
+        <Sidebar
+          activeFolderId={null}
+          onSelectFolder={(id) => navigate(id ? `/folder/${id}` : "/")}
+          onSelectDocument={(id) => navigate(`/document/${id}`)}
+        />
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel defaultSize={80} className="flex flex-col">
+        <UserManagementPage />
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  );
+}
+
 function DocumentViewerView() {
   const { documentId } = useParams();
   const navigate = useNavigate();
@@ -50,14 +80,20 @@ function DocumentViewerView() {
 
 function App() {
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden font-sans text-foreground">
-      <Routes>
-        <Route path="/" element={<FileManagerView />} />
-        <Route path="/folder/:folderId" element={<FileManagerView />} />
-        <Route path="/document/:documentId" element={<DocumentViewerView />} />
-      </Routes>
-      <Toaster />
-    </div>
+    <AuthProvider>
+      <div className="flex h-screen w-full bg-background overflow-hidden font-sans text-foreground">
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          
+          <Route path="/" element={<ProtectedRoute><FileManagerView /></ProtectedRoute>} />
+          <Route path="/folder/:folderId" element={<ProtectedRoute><FileManagerView /></ProtectedRoute>} />
+          <Route path="/document/:documentId" element={<ProtectedRoute><DocumentViewerView /></ProtectedRoute>} />
+          
+          <Route path="/users" element={<ProtectedRoute adminOnly={true}><UserManagementView /></ProtectedRoute>} />
+        </Routes>
+        <Toaster />
+      </div>
+    </AuthProvider>
   );
 }
 

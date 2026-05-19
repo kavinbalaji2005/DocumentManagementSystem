@@ -203,6 +203,9 @@ export function UploadDialog({
         queryClient.invalidateQueries({
           queryKey: ["documents", documentId, "versions"],
         });
+        queryClient.invalidateQueries({
+          queryKey: ["documents", documentId, "audit"],
+        });
       }
       toast({
         title: documentId
@@ -320,6 +323,10 @@ export function RenameDialog({ open, onOpenChange, item }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
+      if (item?.type === "document") {
+        queryClient.invalidateQueries({ queryKey: ["documents", item.id] });
+        queryClient.invalidateQueries({ queryKey: ["documents", item.id, "audit"] });
+      }
       toast({ title: "Renamed successfully" });
       onOpenChange(false);
     },
@@ -423,6 +430,7 @@ export function MoveDialog({ open, onOpenChange, item }) {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       if (item?.type === "document") {
         queryClient.invalidateQueries({ queryKey: ["documents", item.id] });
+        queryClient.invalidateQueries({ queryKey: ["documents", item.id, "audit"] });
       }
       toast({ title: "Moved successfully" });
       onOpenChange(false);

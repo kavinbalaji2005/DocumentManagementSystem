@@ -6,7 +6,42 @@ export const api = axios.create({
   baseURL: API_URL,
 });
 
+// Interceptor to add the JWT token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Interceptor to handle 401s globally (e.g., redirect to login or clear token)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem("token");
+      // Optionally trigger a custom event or let AuthContext handle it
+      window.dispatchEvent(new Event("auth-unauthorized"));
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const FILE_BASE_URL = `${API_URL}/files`;
+
+export const authApi = {
+  login: (employee_id, password) =>
+    api.post("/auth/login", { employee_id, password }).then((res) => res.data),
+  getMe: () => api.get("/auth/me").then((res) => res.data),
+};
+
+export const usersApi = {
+  getAll: () => api.get("/auth/users").then((res) => res.data),
+  create: (data) => api.post("/auth/users", data).then((res) => res.data),
+  update: (id, data) => api.patch(`/auth/users/${id}`, data).then((res) => res.data),
+  delete: (id) => api.delete(`/auth/users/${id}`).then((res) => res.data),
+};
 
 export const foldersApi = {
   getRootChildren: () =>
@@ -21,6 +56,10 @@ export const foldersApi = {
   update: (id, name, parent_id) =>
     api.patch(`/folders/${id}`, { name, parent_id }).then((res) => res.data),
   delete: (id) => api.delete(`/folders/${id}`).then((res) => res.data),
+  getPermissions: (id) =>
+    api.get(`/folders/${id}/permissions`).then((res) => res.data),
+  setPermissions: (id, permissions) =>
+    api.put(`/folders/${id}/permissions`, { permissions }).then((res) => res.data),
 };
 
 export const documentsApi = {
@@ -41,6 +80,14 @@ export const documentsApi = {
   delete: (id) => api.delete(`/documents/${id}`).then((res) => res.data),
   getVersions: (id) =>
     api.get(`/documents/${id}/versions`).then((res) => res.data),
+  getAuditLog: (id) =>
+    api.get(`/documents/${id}/audit`).then((res) => res.data),
+  logAuditExport: (id) =>
+    api.post(`/documents/${id}/audit/export`).then((res) => res.data),
+  getPermissions: (id) =>
+    api.get(`/documents/${id}/permissions`).then((res) => res.data),
+  setPermissions: (id, permissions) =>
+    api.put(`/documents/${id}/permissions`, { permissions }).then((res) => res.data),
 };
 
 export const versionsApi = {
@@ -57,4 +104,19 @@ export const versionsApi = {
 export const aiApi = {
   summarizeDiff: (version_id) =>
     api.post("/ai/summarize-diff", { version_id }).then((res) => res.data),
+};
+
+export const filesApi = {
+  getBlob: (url, params = {}) => api.get(url, { responseType: "blob", params }).then((res) => res.data),
+  downloadFile: async (url, filename) => {
+    const blob = await filesApi.getBlob(url, { download: "true" });
+    const objectUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    link.parentNode.removeChild(link);
+    window.URL.revokeObjectURL(objectUrl);
+  }
 };

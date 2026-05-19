@@ -13,6 +13,7 @@ import {
   ArrowRightLeft,
   Home,
   ChevronRight,
+  Shield,
 } from "lucide-react";
 import { DocxIcon } from "@/components/ui/DocxIcon";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -30,14 +32,18 @@ import {
   MoveDialog,
   DeleteDialog,
 } from "./Dialogs";
+import { AccessListDialog } from "./AccessListDialog";
+import { useAuth } from "@/context/AuthContext";
 import { folder } from "jszip";
 
 export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
+  const { isAdminOrManager } = useAuth();
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [accessListOpen, setAccessListOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
   const queryKey = ["folders", activeFolderId || "root", "children"];
@@ -55,6 +61,12 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
     queryFn: () => foldersApi.getPath(activeFolderId),
     enabled: !!activeFolderId,
   });
+
+  const currentPerms = data?.current_folder_permissions || [];
+  const canCreateFolder =
+    isAdminOrManager || currentPerms.includes("folder:create");
+  const canUploadDoc =
+    isAdminOrManager || currentPerms.includes("document:create");
 
   if (isLoading) {
     return (
@@ -85,6 +97,12 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
     e.stopPropagation();
     setSelectedItem(item);
     setMoveOpen(true);
+  };
+
+  const handleAccessList = (e, item) => {
+    e.stopPropagation();
+    setSelectedItem(item);
+    setAccessListOpen(true);
   };
 
   const handleMoveOpenChange = (open) => {
@@ -132,17 +150,25 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
         </div>
 
         <div className="flex space-x-2 shrink-0 ml-4">
-          <Button
-            variant="default"
-            size="sm"
-            className="h-8"
-            onClick={() => setCreateFolderOpen(true)}
-          >
-            <Plus className="w-4 h-4 mr-2" /> New Folder
-          </Button>
-          <Button size="sm" className="h-8" onClick={() => setUploadOpen(true)}>
-            <Upload className="w-4 h-4 mr-2" /> Upload Document
-          </Button>
+          {canCreateFolder && (
+            <Button
+              variant="default"
+              size="sm"
+              className="h-8"
+              onClick={() => setCreateFolderOpen(true)}
+            >
+              <Plus className="w-4 h-4 mr-2" /> New Folder
+            </Button>
+          )}
+          {canUploadDoc && (
+            <Button
+              size="sm"
+              className="h-8"
+              onClick={() => setUploadOpen(true)}
+            >
+              <Upload className="w-4 h-4 mr-2" /> Upload Document
+            </Button>
+          )}
         </div>
       </div>
 
@@ -173,32 +199,43 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
                       <DocxIcon className="w-10 h-10" />
                     )}
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity -mr-2 -mt-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={(e) => handleRename(e, item)}>
-                        <Edit2 className="w-4 h-4 mr-2" /> Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={(e) => handleMove(e, item)}>
-                        <ArrowRightLeft className="w-4 h-4 mr-2" /> Move
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-red-600 focus:bg-red-50 focus:text-red-700"
-                        onClick={(e) => handleDelete(e, item)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" /> Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {isAdminOrManager && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity -mr-2 -mt-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={(e) => handleRename(e, item)}
+                        >
+                          <Edit2 className="w-4 h-4 mr-2" /> Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => handleMove(e, item)}>
+                          <ArrowRightLeft className="w-4 h-4 mr-2" /> Move
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={(e) => handleAccessList(e, item)}
+                        >
+                          <Shield className="w-4 h-4 mr-2" /> Access List
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-red-600 focus:bg-red-50 focus:text-red-700"
+                          onClick={(e) => handleDelete(e, item)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
                 <h3 className="font-medium text-neutral-900 truncate mb-1">
                   {item.name}
@@ -250,6 +287,11 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
       <DeleteDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
+        item={selectedItem}
+      />
+      <AccessListDialog
+        open={accessListOpen}
+        onOpenChange={setAccessListOpen}
         item={selectedItem}
       />
     </div>

@@ -2,7 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import * as docx from "docx-preview";
 import HtmlDiff from "htmldiff-js";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { documentsApi, versionsApi, aiApi, FILE_BASE_URL } from "@/api";
+import {
+  documentsApi,
+  versionsApi,
+  aiApi,
+  filesApi,
+  FILE_BASE_URL,
+} from "@/api";
 import { format } from "date-fns";
 import {
   FileText,
@@ -36,6 +42,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { UploadDialog } from "@/components/layout/Dialogs";
+import { AuditLogTab } from "./AuditLogTab";
+import { useAuth } from "@/context/AuthContext";
 
 function DocxRenderer({ url }) {
   const containerRef = useRef(null);
@@ -51,11 +59,8 @@ function DocxRenderer({ url }) {
       containerRef.current.innerHTML = "";
     }
 
-    fetch(url)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch document");
-        return res.blob();
-      })
+    filesApi
+      .getBlob(url)
       .then((blob) => {
         if (!isMounted) return;
         return docx.renderAsync(blob, containerRef.current, null, {
@@ -121,16 +126,7 @@ function DocxDiffRenderer({ oldUrl, newUrl }) {
       containerRef.current.innerHTML = "";
     }
 
-    Promise.all([
-      fetch(oldUrl).then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch old document");
-        return res.blob();
-      }),
-      fetch(newUrl).then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch new document");
-        return res.blob();
-      }),
-    ])
+    Promise.all([filesApi.getBlob(oldUrl), filesApi.getBlob(newUrl)])
       .then(async ([oldBlob, newBlob]) => {
         if (!isMounted) return;
 
@@ -211,6 +207,7 @@ function DocxDiffRenderer({ oldUrl, newUrl }) {
 
 export function DocumentViewer({ documentId, onClose }) {
   const queryClient = useQueryClient();
+  const { isAdmin, isAdminOrManager } = useAuth();
   const [activeVersionId, setActiveVersionId] = useState(null);
   const [viewMode, setViewMode] = useState("normal"); // 'normal' | 'diff'
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -224,6 +221,9 @@ export function DocumentViewer({ documentId, onClose }) {
     queryKey: ["documents", documentId],
     queryFn: () => documentsApi.get(documentId),
   });
+
+  // Effective permissions for the current user on this document
+  const perms = document?.effective_permissions || [];
 
   // Fetch versions
   const { data: versions, isLoading: versionsLoading } = useQuery({
@@ -299,6 +299,9 @@ export function DocumentViewer({ documentId, onClose }) {
       queryClient.invalidateQueries({
         queryKey: ["documents", documentId, "versions"],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["documents", documentId, "audit"],
+      });
       setRestoreTargetVersion(null);
       toast({
         title: "Version restored",
@@ -327,6 +330,9 @@ export function DocumentViewer({ documentId, onClose }) {
       queryClient.invalidateQueries({
         queryKey: ["documents", documentId, "versions"],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["documents", documentId, "audit"],
+      });
 
       toast({ title: "Summary generated" });
     },
@@ -344,6 +350,9 @@ export function DocumentViewer({ documentId, onClose }) {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ["documents", documentId, "versions"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["documents", documentId, "audit"],
       });
       setEditingVersionId(null);
       toast({ title: "Version updated" });
@@ -382,10 +391,23 @@ export function DocumentViewer({ documentId, onClose }) {
 
   const hasDiff = activeVersion?.version_number > 1;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!activeVersion) return;
-    window.location.href = `${FILE_BASE_URL}/${activeVersion.storage_path}`;
+    try {
+      const url = `${FILE_BASE_URL}/${activeVersion.storage_path}`;
+      const filename =
+        document?.name || `version_${activeVersion.version_number}.docx`;
+      await filesApi.downloadFile(url, filename);
+    } catch (err) {
+      toast({
+        title: "Download failed",
+        description: "Could not download the file.",
+        variant: "destructive",
+      });
+    }
   };
+
+  const contentWidthClass = viewMode === "audit" ? "max-w-full" : "max-w-4xl";
 
   return (
     <div className="flex-1 flex flex-col bg-neutral-100 overflow-hidden">
@@ -407,88 +429,196 @@ export function DocumentViewer({ documentId, onClose }) {
         </div>
 
         <div className="flex space-x-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleDownload}
-            disabled={!activeVersion || activeVersion.status !== "success"}
-          >
-            <Download className="w-4 h-4 mr-2" /> Download Version {activeVersion?.version_number}
-          </Button>
-          <Button size="sm" onClick={() => setUploadOpen(true)}>
-            <RefreshCw className="w-4 h-4 mr-2" /> Update Version
-          </Button>
+          {perms.includes("document:download") && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleDownload}
+              disabled={!activeVersion || activeVersion.status !== "success"}
+            >
+              <Download className="w-4 h-4 mr-2" /> Download Version{" "}
+              {activeVersion?.version_number}
+            </Button>
+          )}
+          {perms.includes("version:create") && (
+            <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <RefreshCw className="w-4 h-4 mr-2" /> Update Version
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Main Content Area */}
         <div className="flex-1 overflow-auto bg-neutral-100 p-8">
-          <div className="max-w-4xl mx-auto w-full mb-4">
+          <div className={`${contentWidthClass} mx-auto w-full mb-4`}>
             <Tabs
               value={viewMode}
               onValueChange={setViewMode}
-              className="w-[300px]"
+              className="w-[400px]"
             >
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList
+                className={`grid w-full ${isAdmin ? "grid-cols-3" : "grid-cols-2"}`}
+              >
                 <TabsTrigger value="normal">Normal View</TabsTrigger>
                 <TabsTrigger value="diff" disabled={!hasDiff}>
                   Diff View
                 </TabsTrigger>
+                {isAdmin && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
               </TabsList>
             </Tabs>
           </div>
 
-          <div className="max-w-4xl mx-auto w-full bg-white shadow-sm border border-neutral-200 rounded-md min-h-[800px] flex flex-col relative">
-            {diffLoading && viewMode === "diff" ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-10">
-                <Loader2 className="w-8 h-8 animate-spin text-neutral-300" />
-              </div>
-            ) : null}
+          <div
+            className={`${contentWidthClass} mx-auto w-full bg-white shadow-sm border border-neutral-200 rounded-md min-h-[800px] flex flex-col relative`}
+          >
+            {viewMode === "audit" ? (
+              <AuditLogTab
+                documentId={documentId}
+                documentName={document?.name}
+              />
+            ) : (
+              <>
+                {diffLoading && viewMode === "diff" ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm z-10">
+                    <Loader2 className="w-8 h-8 animate-spin text-neutral-300" />
+                  </div>
+                ) : null}
 
-            {activeVersion?.status === "failed" && (
-              <div className="p-12 text-center text-neutral-500">
-                <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-neutral-900 mb-2">
-                  Extraction Failed
-                </h3>
-                <p className="text-sm bg-neutral-50 p-4 rounded text-left overflow-auto whitespace-pre-wrap font-mono">
-                  {activeVersion.error_message}
-                </p>
-              </div>
-            )}
+                {activeVersion?.status === "failed" && (
+                  <div className="p-12 text-center text-neutral-500">
+                    <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-neutral-900 mb-2">
+                      Extraction Failed
+                    </h3>
+                    <p className="text-sm bg-neutral-50 p-4 rounded text-left overflow-auto whitespace-pre-wrap font-mono">
+                      {activeVersion.error_message}
+                    </p>
+                  </div>
+                )}
 
-            {activeVersion?.status === "pending" ||
-            activeVersion?.status === "processing" ? (
-              <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
-                <Loader2 className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-spin" />
-                <h3 className="text-lg font-medium text-neutral-900 mb-2">
-                  Processing Document
-                </h3>
-                <p className="text-sm text-neutral-500">
-                  Extracting content and computing diffs...
-                </p>
-              </div>
-            ) : null}
+                {activeVersion?.status === "pending" ||
+                activeVersion?.status === "processing" ? (
+                  <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
+                    <Loader2 className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-spin" />
+                    <h3 className="text-lg font-medium text-neutral-900 mb-2">
+                      Processing Document
+                    </h3>
+                    <p className="text-sm text-neutral-500">
+                      Extracting content and computing diffs...
+                    </p>
+                  </div>
+                ) : null}
 
-            {activeVersion?.status === "success" && viewMode === "normal" && (
-              <div className="w-full flex-1">
-                <DocxRenderer
-                  url={`${FILE_BASE_URL}/${activeVersion.storage_path}`}
-                />
-              </div>
-            )}
+                {activeVersion?.status === "success" &&
+                  viewMode === "normal" && (
+                    <div className="w-full flex-1">
+                      <DocxRenderer
+                        url={`${FILE_BASE_URL}/${activeVersion.storage_path}`}
+                      />
+                    </div>
+                  )}
 
-            {activeVersion?.status === "success" &&
-              viewMode === "diff" &&
-              hasDiff && (
-                <div className="flex flex-col">
-                  {/* AI Summary Banner */}
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 p-4">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center text-blue-800 font-medium mb-2">
-                        <Wand2 className="w-4 h-4 mr-2" /> AI Diff Summary for Version {previousVersion?.version_number} &rarr; {activeVersion?.version_number}
+                {activeVersion?.status === "success" &&
+                  viewMode === "diff" &&
+                  hasDiff && (
+                    <div className="flex flex-col">
+                      {/* AI Summary Banner */}
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center text-blue-800 font-medium mb-2">
+                            <Wand2 className="w-4 h-4 mr-2" /> AI Diff Summary
+                            for Version {previousVersion?.version_number} &rarr;{" "}
+                            {activeVersion?.version_number}
+                          </div>
+                          {(() => {
+                            const hasChanges =
+                              diffContent?.stats &&
+                              ((diffContent.stats.added_chars || 0) > 0 ||
+                                (diffContent.stats.removed_chars || 0) > 0 ||
+                                (diffContent.stats.modified_blocks || 0) > 0 ||
+                                (diffContent.stats.added_blocks || 0) > 0 ||
+                                (diffContent.stats.removed_blocks || 0) > 0);
+
+                            // Hide button entirely if user can't update document
+                            if (!perms.includes("document:update")) return null;
+
+                            return (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="bg-white/80 hover:bg-white"
+                                onClick={() =>
+                                  summarizeMutation.mutate(activeVersion.id)
+                                }
+                                disabled={
+                                  summarizeMutation.isPending || !hasChanges
+                                }
+                                title={
+                                  !hasChanges
+                                    ? "No changes detected to summarize"
+                                    : ""
+                                }
+                              >
+                                {summarizeMutation.isPending ? (
+                                  <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+                                ) : diffContent?.ai_summary ? (
+                                  <RefreshCw className="w-3 h-3 mr-2" />
+                                ) : null}
+                                {diffContent?.ai_summary
+                                  ? "Regenerate"
+                                  : "Generate Summary"}
+                              </Button>
+                            );
+                          })()}
+                        </div>
+                        {diffContent?.ai_summary ? (
+                          <>
+                            <div className="text-sm text-blue-900 leading-relaxed markdown-summary mb-3">
+                              <ReactMarkdown>
+                                {diffContent.ai_summary}
+                              </ReactMarkdown>
+                            </div>
+                            <div className="flex justify-between items-end mt-2">
+                              {perms.includes("document:update") && (
+                                <Button
+                                  size="xs"
+                                  variant="ghost"
+                                  className="h-7 text-xs text-blue-700 hover:bg-blue-100/50 hover:text-blue-800"
+                                  onClick={() =>
+                                    handleTransferToComment(
+                                      diffContent.ai_summary,
+                                    )
+                                  }
+                                >
+                                  <Copy className="w-3 h-3 mr-2" /> Use as
+                                  Comment
+                                </Button>
+                              )}
+                              {diffContent.stats?.ai_prompt_tokens !==
+                                undefined && (
+                                <span className="text-xs text-blue-400/80 italic font-medium pr-2 pb-1">
+                                  * Costed {diffContent.stats.ai_prompt_tokens}{" "}
+                                  Input tokens and{" "}
+                                  {diffContent.stats.ai_completion_tokens}{" "}
+                                  Output tokens
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : perms.includes("document:update") ? (
+                          <p className="text-sm text-blue-600/70 italic">
+                            Click generate to get an AI summary of what changed
+                            in this version.
+                          </p>
+                        ) : (
+                          <p className="text-sm text-blue-600/70 italic">
+                            No AI summary has been generated for this version
+                            yet.
+                          </p>
+                        )}
                       </div>
+
                       {(() => {
                         const hasChanges =
                           diffContent?.stats &&
@@ -497,130 +627,62 @@ export function DocumentViewer({ documentId, onClose }) {
                             (diffContent.stats.modified_blocks || 0) > 0 ||
                             (diffContent.stats.added_blocks || 0) > 0 ||
                             (diffContent.stats.removed_blocks || 0) > 0);
+
+                        if (!diffLoading && diffContent && !hasChanges) {
+                          return (
+                            <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
+                              <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-4" />
+                              <h3 className="text-lg font-medium text-neutral-900 mb-2">
+                                No Changes Detected
+                              </h3>
+                            </div>
+                          );
+                        }
+
+                        if (!diffLoading && diffError) {
+                          return (
+                            <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
+                              <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+                              <h3 className="text-lg font-medium text-red-900 mb-2">
+                                Comparison Failed
+                              </h3>
+                              <p className="text-sm text-red-500">
+                                {diffQueryError?.response?.data?.error ||
+                                  diffQueryError?.message ||
+                                  "An error occurred while computing the differences."}
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        if (!diffLoading && !diffContent) {
+                          return (
+                            <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
+                              <Loader2 className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-spin" />
+                              <h3 className="text-lg font-medium text-neutral-900 mb-2">
+                                Processing Diff
+                              </h3>
+                              <p className="text-sm text-neutral-500">
+                                The comparison is being calculated. This may
+                                take a moment.
+                              </p>
+                            </div>
+                          );
+                        }
+
                         return (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="bg-white/80 hover:bg-white"
-                            onClick={() =>
-                              summarizeMutation.mutate(activeVersion.id)
-                            }
-                            disabled={
-                              summarizeMutation.isPending || !hasChanges
-                            }
-                            title={
-                              !hasChanges
-                                ? "No changes detected to summarize"
-                                : ""
-                            }
-                          >
-                            {summarizeMutation.isPending ? (
-                              <Loader2 className="w-3 h-3 mr-2 animate-spin" />
-                            ) : diffContent?.ai_summary ? (
-                              <RefreshCw className="w-3 h-3 mr-2" />
-                            ) : null}
-                            {diffContent?.ai_summary
-                              ? "Regenerate"
-                              : "Generate Summary"}
-                          </Button>
+                          <div className="w-full flex-1">
+                            <DocxDiffRenderer
+                              oldUrl={`${FILE_BASE_URL}/${previousVersion?.storage_path}`}
+                              newUrl={`${FILE_BASE_URL}/${activeVersion?.storage_path}`}
+                            />
+                          </div>
                         );
                       })()}
                     </div>
-                    {diffContent?.ai_summary ? (
-                      <>
-                        <div className="text-sm text-blue-900 leading-relaxed markdown-summary mb-3">
-                          <ReactMarkdown>
-                            {diffContent.ai_summary}
-                          </ReactMarkdown>
-                        </div>
-                        <div className="flex justify-between items-end mt-2">
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            className="h-7 text-xs text-blue-700 hover:bg-blue-100/50 hover:text-blue-800"
-                            onClick={() =>
-                              handleTransferToComment(diffContent.ai_summary)
-                            }
-                          >
-                            <Copy className="w-3 h-3 mr-2" /> Use as Comment
-                          </Button>
-                          {diffContent.stats?.ai_prompt_tokens !== undefined && (
-                            <span className="text-xs text-blue-400/80 italic font-medium pr-2 pb-1">
-                            * Costed {diffContent.stats.ai_prompt_tokens} Input tokens and {diffContent.stats.ai_completion_tokens} Output tokens
-                            </span>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-sm text-blue-600/70 italic">
-                        Click generate to get an AI summary of what changed in
-                        this version.
-                      </p>
-                    )}
-                  </div>
-
-                  {(() => {
-                    const hasChanges =
-                      diffContent?.stats &&
-                      ((diffContent.stats.added_chars || 0) > 0 ||
-                        (diffContent.stats.removed_chars || 0) > 0 ||
-                        (diffContent.stats.modified_blocks || 0) > 0 ||
-                        (diffContent.stats.added_blocks || 0) > 0 ||
-                        (diffContent.stats.removed_blocks || 0) > 0);
-
-                    if (!diffLoading && diffContent && !hasChanges) {
-                      return (
-                        <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
-                          <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-neutral-900 mb-2">
-                            No Changes Detected
-                          </h3>
-                        </div>
-                      );
-                    }
-
-                    if (!diffLoading && diffError) {
-                      return (
-                        <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
-                          <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-red-900 mb-2">
-                            Comparison Failed
-                          </h3>
-                          <p className="text-sm text-red-500">
-                            {diffQueryError?.response?.data?.error ||
-                              diffQueryError?.message ||
-                              "An error occurred while computing the differences."}
-                          </p>
-                        </div>
-                      );
-                    }
-
-                    if (!diffLoading && !diffContent) {
-                      return (
-                        <div className="p-12 text-center text-neutral-500 h-full flex flex-col items-center justify-center">
-                          <Loader2 className="w-12 h-12 text-blue-400 mx-auto mb-4 animate-spin" />
-                          <h3 className="text-lg font-medium text-neutral-900 mb-2">
-                            Processing Diff
-                          </h3>
-                          <p className="text-sm text-neutral-500">
-                            The comparison is being calculated. This may take a
-                            moment.
-                          </p>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div className="w-full flex-1">
-                        <DocxDiffRenderer
-                          oldUrl={`${FILE_BASE_URL}/${previousVersion?.storage_path}`}
-                          newUrl={`${FILE_BASE_URL}/${activeVersion?.storage_path}`}
-                        />
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
+                  )}
+              </>
+            )}
           </div>
 
           {/* Bottom spacing */}
@@ -628,153 +690,161 @@ export function DocumentViewer({ documentId, onClose }) {
         </div>
 
         {/* Sidebar: Version History */}
-        <div className="w-80 border-l border-neutral-200 bg-white flex flex-col shrink-0">
-          <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
-            <h2 className="font-semibold flex items-center">
-              <History className="w-4 h-4 mr-2 text-neutral-500" />
-              Version History
-            </h2>
-            <span className="text-xs bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full font-medium">
-              {versions?.length} versions
-            </span>
-          </div>
+        {viewMode !== "audit" && (
+          <div className="w-80 border-l border-neutral-200 bg-white flex flex-col shrink-0">
+            <div className="p-4 border-b border-neutral-200 flex items-center justify-between">
+              <h2 className="font-semibold flex items-center">
+                <History className="w-4 h-4 mr-2 text-neutral-500" />
+                Version History
+              </h2>
+              <span className="text-xs bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full font-medium">
+                {versions?.length} versions
+              </span>
+            </div>
 
-          <ScrollArea className="flex-1">
-            <div className="p-3 space-y-2">
-              {versions?.map((v) => (
-                <div
-                  key={v.id}
-                  onClick={() => setActiveVersionId(v.id)}
-                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                    activeVersionId === v.id
-                      ? "border-blue-500 bg-blue-50/50 shadow-sm"
-                      : "border-neutral-200 hover:border-neutral-300 bg-white"
-                  }`}
-                >
-                  {editingVersionId === v.id ? (
-                    <div
-                      className="space-y-3"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-neutral-400">
-                          Name
-                        </label>
-                        <input
-                          autoFocus
-                          className="w-full text-sm font-medium border-b border-blue-300 focus:outline-none bg-transparent py-0.5"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-neutral-400">
-                          Comment
-                        </label>
-                        <textarea
-                          className="w-full text-xs border rounded p-1.5 min-h-[60px] focus:outline-none focus:ring-1 focus:ring-blue-400"
-                          value={editComment}
-                          onChange={(e) => setEditComment(e.target.value)}
-                          placeholder="Add notes about this version..."
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          className="h-7 px-3 text-xs"
-                          onClick={() =>
-                            updateVersionMutation.mutate({
-                              id: v.id,
-                              name: editName,
-                              comment: editComment,
-                            })
-                          }
-                          disabled={updateVersionMutation.isPending}
-                        >
-                          {updateVersionMutation.isPending ? (
-                            <Loader2 className="w-3 h-3 animate-spin mr-2" />
-                          ) : (
-                            <Save className="w-3 h-3 mr-2" />
-                          )}
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-3 text-xs"
-                          onClick={() => setEditingVersionId(null)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between items-start mb-1">
-                        <div className="font-medium text-sm flex items-center group">
-                          {v.name || `Version ${v.version_number}`}
-                          {v.version_number ===
-                            document?.current_version_number && (
-                            <span className="ml-2 text-[10px] uppercase tracking-wider font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
-                              Current
-                            </span>
-                          )}
+            <ScrollArea className="flex-1">
+              <div className="p-3 space-y-2">
+                {versions?.map((v) => (
+                  <div
+                    key={v.id}
+                    onClick={() => setActiveVersionId(v.id)}
+                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                      activeVersionId === v.id
+                        ? "border-blue-500 bg-blue-50/50 shadow-sm"
+                        : "border-neutral-200 hover:border-neutral-300 bg-white"
+                    }`}
+                  >
+                    {editingVersionId === v.id ? (
+                      <div
+                        className="space-y-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-neutral-400">
+                            Name
+                          </label>
+                          <input
+                            autoFocus
+                            className="w-full text-sm font-medium border-b border-blue-300 focus:outline-none bg-transparent py-0.5"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-neutral-400">
+                            Comment
+                          </label>
+                          <textarea
+                            className="w-full text-xs border rounded p-1.5 min-h-[60px] focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            value={editComment}
+                            onChange={(e) => setEditComment(e.target.value)}
+                            placeholder="Add notes about this version..."
+                          />
+                        </div>
+                        <div className="flex gap-2">
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 ml-1"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEditing(v);
-                            }}
+                            size="sm"
+                            className="h-7 px-3 text-xs"
+                            onClick={() =>
+                              updateVersionMutation.mutate({
+                                id: v.id,
+                                name: editName,
+                                comment: editComment,
+                              })
+                            }
+                            disabled={updateVersionMutation.isPending}
                           >
-                            <Edit2 className="w-3 h-3 text-neutral-400" />
+                            {updateVersionMutation.isPending ? (
+                              <Loader2 className="w-3 h-3 animate-spin mr-2" />
+                            ) : (
+                              <Save className="w-3 h-3 mr-2" />
+                            )}
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-3 text-xs"
+                            onClick={() => setEditingVersionId(null)}
+                          >
+                            Cancel
                           </Button>
                         </div>
-                        <div className="text-[10px] text-neutral-400 flex items-center">
-                          {format(new Date(v.created_at), "MMM d, h:mm a")}
-                        </div>
                       </div>
-
-                      {v.comment && (
-                        <div className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded border border-neutral-100 mb-2 version-comment-markdown">
-                          <ReactMarkdown>{v.comment}</ReactMarkdown>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between items-center mt-3">
-                        <div className="text-[10px] text-neutral-400 font-mono">
-                          v{v.version_number} •{" "}
-                          {(v.file_size / 1024).toFixed(1)} KB
-                        </div>
-                        <div className="flex gap-1">
-                          {/* Restore: only for non-current versions */}
-                          {v.version_number !==
-                            document?.current_version_number &&
-                            v.status === "success" && (
+                    ) : (
+                      <>
+                        <div className="flex justify-between items-start mb-1">
+                          <div className="font-medium text-sm flex items-center group">
+                            {v.name || `Version ${v.version_number}`}
+                            {v.version_number ===
+                              document?.current_version_number && (
+                              <span className="ml-2 text-[10px] uppercase tracking-wider font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">
+                                Current
+                              </span>
+                            )}
+                            {perms.includes("document:update") && (
                               <Button
-                                size="icon"
                                 variant="ghost"
-                                className="h-6 w-6 text-neutral-500"
-                                title="Restore"
+                                size="icon"
+                                className="h-5 w-5 ml-1"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setRestoreTargetVersion(v);
+                                  startEditing(v);
                                 }}
-                                disabled={restoreMutation.isPending}
                               >
-                                <RotateCcw className="w-3.5 h-3.5" />
+                                <Edit2 className="w-3 h-3 text-neutral-400" />
                               </Button>
                             )}
+                          </div>
+                          <div className="text-[10px] text-neutral-400 flex items-center">
+                            {format(
+                              new Date(v.created_at),
+                              "dd/MM/yyyy h:mm a",
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
+
+                        {v.comment && (
+                          <div className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded border border-neutral-100 mb-2 version-comment-markdown">
+                            <ReactMarkdown>{v.comment}</ReactMarkdown>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between items-center mt-3">
+                          <div className="text-[10px] text-neutral-400 font-mono">
+                            v{v.version_number} •{" "}
+                            {(v.file_size / 1024).toFixed(1)} KB
+                          </div>
+                          <div className="flex gap-1">
+                            {/* Restore: only for non-current versions */}
+                            {perms.includes("version:create") &&
+                              v.version_number !==
+                                document?.current_version_number &&
+                              v.status === "success" && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-neutral-500"
+                                  title="Restore"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRestoreTargetVersion(v);
+                                  }}
+                                  disabled={restoreMutation.isPending}
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
       </div>
 
       <UploadDialog
@@ -782,7 +852,11 @@ export function DocumentViewer({ documentId, onClose }) {
         onOpenChange={setUploadOpen}
         documentId={documentId}
         documentName={document?.name}
-        nextVersionNumber={document?.current_version_number ? document.current_version_number + 1 : null}
+        nextVersionNumber={
+          document?.current_version_number
+            ? document.current_version_number + 1
+            : null
+        }
       />
 
       <AlertDialog

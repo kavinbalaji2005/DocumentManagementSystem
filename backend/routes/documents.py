@@ -1,9 +1,15 @@
 import os
 import shutil
 import hashlib
-from flask import Blueprint, request, jsonify, current_app
-from models import db, Folder, Document, Version
+from flask import Blueprint, request, jsonify, current_app, g
+from models import db, Folder, Document, Version, ResourcePermission
+from routes.auth import token_required, admin_required, admin_or_manager_required
 from utils.storage import resolve_document_directory
+from utils.audit import log_document_action
+from utils.permissions import (
+    require_permission, has_permission, get_effective_permissions,
+    get_permissions_for_resource
+)
 
 documents_bp = Blueprint('documents', __name__, url_prefix='/documents')
 
@@ -24,6 +30,7 @@ def _parse_optional_folder_id(raw_value):
         raise ValueError('folder_id must be an integer or null')
 
 @documents_bp.route('/upload', methods=['POST'])
+@token_required
 def upload_document():
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -34,8 +41,6 @@ def upload_document():
         
     if not file.filename.lower().endswith('.docx'):
         return jsonify({'error': 'Only .docx files are supported'}), 400
-        
-    # Check file size (enforced by Flask MAX_CONTENT_LENGTH, but we can do a quick check if needed)
     
     try:
         folder_id = _parse_optional_folder_id(request.form.get('folder_id'))
@@ -48,9 +53,23 @@ def upload_document():
     document_id = request.form.get('document_id')
     
     if document_id:
+        # Uploading new version — require version:create
         document = Document.query.get_or_404(int(document_id))
+        denied = require_permission('document', document.id, 'version:create')
+        if denied:
+            return denied
         document.current_version_number += 1
     else:
+        # Uploading new document — require document:create on folder
+        if folder_id is not None:
+            denied = require_permission('folder', folder_id, 'document:create')
+            if denied:
+                return denied
+        else:
+            # Root-level upload — only Admin/Manager
+            if g.user.role == 'Employee':
+                return jsonify({'error': 'You do not have permission to upload to root level'}), 403
+
         document_name = request.form.get('name') or file.filename
         
         # Enforce unique document name within the target folder
@@ -67,7 +86,6 @@ def upload_document():
     doc_dir = resolve_document_directory(storage_root, document.id)
     os.makedirs(doc_dir, exist_ok=True)
     
-    # We don't have the hash yet, save temp file
     temp_path = os.path.join(doc_dir, 'temp.docx')
     file.save(temp_path)
     
@@ -82,7 +100,6 @@ def upload_document():
         os.remove(final_path)
         return jsonify({'error': 'Checksum verification failed after writing file.'}), 500
     
-    # Relative path for DB
     storage_path = f"documents/{document.id}/{filename}"
     
     version = Version(
@@ -103,17 +120,39 @@ def upload_document():
     thread = threading.Thread(target=process_version, args=(app, version.id))
     thread.daemon = True
     thread.start()
+    
+    if document_id:
+        log_document_action(document.id, 'VERSION_UPLOAD', {'version': document.current_version_number})
+    else:
+        log_document_action(document.id, 'CREATE', {'name': document.name, 'folder_id': document.folder_id})
          
     return jsonify(document.to_dict()), 201
 
 @documents_bp.route('/<int:doc_id>', methods=['GET'])
+@token_required
 def get_document(doc_id):
     document = Document.query.get_or_404(doc_id)
-    return jsonify(document.to_dict())
+    
+    # Permission check
+    denied = require_permission('document', doc_id, 'document:view')
+    if denied:
+        return denied
+    
+    result = document.to_dict()
+    # Include effective permissions for the current user
+    result['effective_permissions'] = get_effective_permissions(g.user, 'document', doc_id)
+    return jsonify(result)
 
 @documents_bp.route('/<int:doc_id>', methods=['PATCH'])
+@token_required
 def update_document(doc_id):
     document = Document.query.get_or_404(doc_id)
+    
+    # Permission check
+    denied = require_permission('document', doc_id, 'document:update')
+    if denied:
+        return denied
+    
     data = request.json or {}
     new_name = data.get('name', document.name)
     new_folder_id = document.folder_id
@@ -133,17 +172,30 @@ def update_document(doc_id):
         if existing and existing.id != document.id:
             return jsonify({'error': f'A document named "{new_name}" already exists in the target folder.'}), 409
 
-    if 'name' in data:
+    changes = {}
+    if 'name' in data and new_name != document.name:
+        changes['name'] = {'old': document.name, 'new': new_name}
         document.name = new_name
-    if 'folder_id' in data:
+    if 'folder_id' in data and new_folder_id != document.folder_id:
+        changes['folder_id'] = {'old': document.folder_id, 'new': new_folder_id}
         document.folder_id = new_folder_id
          
     db.session.commit()
+    
+    if changes:
+        log_document_action(document.id, 'UPDATE', changes)
+        
     return jsonify(document.to_dict())
 
 @documents_bp.route('/<int:doc_id>', methods=['DELETE'])
+@token_required
 def delete_document(doc_id):
     document = Document.query.get_or_404(doc_id)
+    
+    # Permission check
+    denied = require_permission('document', doc_id, 'document:delete')
+    if denied:
+        return denied
     
     # Delete physical files
     storage_root = current_app.config['STORAGE_ROOT']
@@ -156,7 +208,81 @@ def delete_document(doc_id):
     return jsonify({'message': 'Document deleted successfully'})
 
 @documents_bp.route('/<int:doc_id>/versions', methods=['GET'])
+@token_required
 def get_versions(doc_id):
     document = Document.query.get_or_404(doc_id)
+    
+    # Permission check
+    denied = require_permission('document', doc_id, 'version:view')
+    if denied:
+        return denied
+    
     versions = Version.query.filter_by(document_id=doc_id).order_by(Version.version_number.desc()).all()
     return jsonify([v.to_dict() for v in versions])
+
+@documents_bp.route('/<int:doc_id>/audit', methods=['GET'])
+@token_required
+@admin_required
+def get_audit_log(doc_id):
+    from models import AuditLog
+    document = Document.query.get_or_404(doc_id)
+    logs = AuditLog.query.filter_by(document_id=doc_id).order_by(AuditLog.created_at.desc()).all()
+    return jsonify([log.to_dict() for log in logs])
+
+@documents_bp.route('/<int:doc_id>/audit/export', methods=['POST'])
+@token_required
+@admin_required
+def log_audit_export(doc_id):
+    document = Document.query.get_or_404(doc_id)
+    from utils.audit import log_document_action
+    log_document_action(document.id, 'EXPORT_AUDIT')
+    return jsonify({'status': 'success'})
+
+
+# ─── Permission Management Endpoints ─────────────────────────────
+
+@documents_bp.route('/<int:doc_id>/permissions', methods=['GET'])
+@token_required
+@admin_or_manager_required
+def get_document_permissions(doc_id):
+    """Get all user permissions for a document (Admin/Manager only)."""
+    Document.query.get_or_404(doc_id)
+    perms = get_permissions_for_resource('document', doc_id)
+    return jsonify(perms)
+
+@documents_bp.route('/<int:doc_id>/permissions', methods=['PUT'])
+@token_required
+@admin_or_manager_required
+def set_document_permissions(doc_id):
+    """
+    Bulk-set permissions for a document (Admin/Manager only).
+    Body: { "permissions": [{ "user_id": 1, "privileges": ["document:view", ...] }, ...] }
+    """
+    Document.query.get_or_404(doc_id)
+    data = request.get_json() or {}
+    permissions = data.get('permissions', [])
+    
+    for entry in permissions:
+        user_id = entry.get('user_id')
+        privileges = entry.get('privileges', [])
+        
+        if not user_id:
+            continue
+        
+        existing = ResourcePermission.query.filter_by(
+            user_id=user_id, resource_type='document', resource_id=doc_id
+        ).first()
+        
+        if existing:
+            existing.set_privileges(privileges)
+        else:
+            new_perm = ResourcePermission(
+                user_id=user_id,
+                resource_type='document',
+                resource_id=doc_id
+            )
+            new_perm.set_privileges(privileges)
+            db.session.add(new_perm)
+    
+    db.session.commit()
+    return jsonify({'status': 'success'})

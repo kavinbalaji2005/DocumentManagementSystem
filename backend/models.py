@@ -1,11 +1,36 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone
 import json
+from werkzeug.security import generate_password_hash, check_password_hash
 
 def utc_now():
     return datetime.now(timezone.utc)
 
 db = SQLAlchemy()
+
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.String(50), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='Employee')
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'employee_id': self.employee_id,
+            'role': self.role,
+            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None
+        }
 
 class Folder(db.Model):
     __tablename__ = 'folders'
@@ -106,4 +131,66 @@ class Version(db.Model):
             'stats': stats,
             'ai_summary': self.ai_summary,
             'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None
+        }
+
+class AuditLog(db.Model):
+    __tablename__ = 'audit_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    action = db.Column(db.String(50), nullable=False)
+    details = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=utc_now)
+
+    # Relationships
+    user = db.relationship('User', backref='audit_logs')
+    document = db.relationship('Document', backref=db.backref('audit_logs', cascade='all, delete-orphan'))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'document_id': self.document_id,
+            'user_id': self.user_id,
+            'user': self.user.to_dict() if self.user else None,
+            'action': self.action,
+            'details': self.details,
+            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None
+        }
+
+class ResourcePermission(db.Model):
+    __tablename__ = 'resource_permissions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    resource_type = db.Column(db.String(20), nullable=False)  # 'folder' or 'document'
+    resource_id = db.Column(db.Integer, nullable=False)
+    privileges = db.Column(db.Text, nullable=False, default='[]')  # JSON array of privilege strings
+    created_at = db.Column(db.DateTime, default=utc_now)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    user = db.relationship('User', backref='resource_permissions')
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'resource_type', 'resource_id', name='uq_user_resource'),
+    )
+
+    def get_privileges(self):
+        try:
+            return json.loads(self.privileges)
+        except (TypeError, ValueError):
+            return []
+
+    def set_privileges(self, privs):
+        self.privileges = json.dumps(privs)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user': self.user.to_dict() if self.user else None,
+            'resource_type': self.resource_type,
+            'resource_id': self.resource_id,
+            'privileges': self.get_privileges(),
+            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None
         }

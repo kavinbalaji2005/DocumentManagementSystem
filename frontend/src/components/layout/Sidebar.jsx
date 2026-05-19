@@ -5,13 +5,17 @@ import {
   ChevronRight,
   ChevronDown,
   Folder,
-  FileText,
   Loader2,
   Home,
+  LogOut,
+  Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DocxIcon } from "@/components/ui/DocxIcon";
+import { useAuth } from "@/context/AuthContext";
+import { Button } from "@/components/ui/button";
+import { useNavigate, useLocation } from "react-router-dom";
 
 function FolderNode({
   folder,
@@ -107,6 +111,13 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
     queryFn: foldersApi.getRootChildren,
   });
 
+  const { user, isAdmin, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const isUsersPage = location.pathname === "/users";
+  const [isHomeExpanded, setIsHomeExpanded] = useState(true);
+
   return (
     <div className="border-r border-border bg-muted/30 flex flex-col h-full w-full">
       <div className="h-14 px-4 border-b border-border flex items-center justify-between shrink-0">
@@ -114,48 +125,106 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
       </div>
 
       <ScrollArea className="flex-1 p-2">
-        <div
-          className={cn(
-            "flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm mb-1",
-            activeFolderId === null &&
-              "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
+        <div className="select-none">
+          <div
+            className={cn(
+              "flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm mb-1",
+              activeFolderId === null && !isUsersPage &&
+                "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
+            )}
+            onClick={() => {
+              onSelectFolder?.(null);
+              navigate("/");
+            }}
+          >
+            <button
+              className="w-4 h-4 mr-1 flex items-center justify-center text-neutral-500 hover:text-neutral-900"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsHomeExpanded(!isHomeExpanded);
+              }}
+            >
+              {isHomeExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+            </button>
+            <Home className="w-4 h-4 mr-2 text-neutral-600" />
+            <span>Home</span>
+          </div>
+
+          {isHomeExpanded && (
+            <div className="ml-[15px] border-l border-neutral-200 dark:border-neutral-800">
+              {isLoading ? (
+                <div className="pl-6 py-1 text-xs text-neutral-400 flex items-center">
+                  <Loader2 className="w-3 h-3 mr-2 animate-spin" /> Loading...
+                </div>
+              ) : (
+                <>
+                  {data?.folders.map((folder) => (
+                    <FolderNode
+                      key={folder.id}
+                      folder={folder}
+                      level={1}
+                      activeFolderId={activeFolderId}
+                      onSelectFolder={onSelectFolder}
+                      onSelectDocument={onSelectDocument}
+                    />
+                  ))}
+                  {data?.documents.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center py-1.5 pl-6 pr-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400"
+                      onClick={() => onSelectDocument(doc.id)}
+                    >
+                      <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
+                      <span className="truncate">{doc.name}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
           )}
-          onClick={() => onSelectFolder(null)}
-        >
-          <span className="w-4 h-4 mr-1" />
-          <Home className="w-4 h-4 mr-2 text-neutral-600" />
-          <span>Home</span>
         </div>
 
-        {isLoading ? (
-          <div className="p-4 flex justify-center">
-            <Loader2 className="w-5 h-5 animate-spin text-neutral-400" />
-          </div>
-        ) : (
-          <>
-            {data?.folders.map((folder) => (
-              <FolderNode
-                key={folder.id}
-                folder={folder}
-                level={0}
-                activeFolderId={activeFolderId}
-                onSelectFolder={onSelectFolder}
-                onSelectDocument={onSelectDocument}
-              />
-            ))}
-            {data?.documents.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400 ml-5"
-                onClick={() => onSelectDocument(doc.id)}
-              >
-                <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
-                <span className="truncate">{doc.name}</span>
-              </div>
-            ))}
-          </>
-        )}
       </ScrollArea>
+
+      {isAdmin && (
+        <div className="p-2 border-t border-border bg-background shrink-0">
+          <div
+            className={cn(
+              "flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm",
+              isUsersPage &&
+                "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
+            )}
+            onClick={() => navigate("/users")}
+          >
+            <Users className="w-4 h-4 mr-2" />
+            <span>User Management</span>
+          </div>
+        </div>
+      )}
+
+      {/* User Profile Section */}
+      {user && (
+        <div className="p-4 border-t border-border bg-background flex flex-col gap-2 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col overflow-hidden">
+              <span className="text-sm font-medium truncate">{user.employee_id}</span>
+              <span className="text-xs text-muted-foreground">{user.role}</span>
+            </div>
+            <Button
+              variant="destructive"
+              title="Logout"
+              onClick={logout}
+              className="shrink-0"
+            >Logout
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
