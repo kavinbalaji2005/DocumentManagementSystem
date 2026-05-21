@@ -18,13 +18,19 @@ const FOLDER_PRIVILEGES = [
   { key: "document:view", label: "View", group: "Document" },
   { key: "document:create", label: "Upload", group: "Document" },
   { key: "document:download", label: "Download", group: "Document" },
-  { key: "version:create", label: "Upload/Restore Versions", group: "Document" },
+  {
+    key: "version:create",
+    label: "Upload/Restore Versions",
+    group: "Document",
+  },
+  { key: "ai:diff_summary", label: "AI Diff Summary", group: "AI Tools" },
 ];
 
 const DOCUMENT_PRIVILEGES = [
   { key: "document:view", label: "View Document", group: "Document" },
   { key: "document:download", label: "Download", group: "Document" },
   { key: "version:create", label: "Upload/Restore Versions", group: "Version" },
+  { key: "ai:diff_summary", label: "AI Diff Summary", group: "AI Tools" },
 ];
 
 const EMPTY_ARRAY = [];
@@ -81,6 +87,9 @@ export function AccessListDialog({ open, onOpenChange, item }) {
       const current = new Set(next[userId] || []);
       if (current.has(privilege)) {
         current.delete(privilege);
+        if (privilege === "document:view") {
+          current.clear();
+        }
       } else {
         current.add(privilege);
       }
@@ -150,7 +159,8 @@ export function AccessListDialog({ open, onOpenChange, item }) {
             Access List - {item?.name}
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground mt-1">
-            Set per-employee privileges for this {resourceType}. Auto applies to all subfolders and documents if any.
+            Set per-employee privileges for this {resourceType}. Auto applies to
+            all subfolders and documents if any.
           </DialogDescription>
         </DialogHeader>
 
@@ -231,26 +241,32 @@ export function AccessListDialog({ open, onOpenChange, item }) {
                           </button>
                         </td>
                         {Object.entries(grouped).map(([group, privs]) =>
-                          privs.map((p) => (
-                            <td
-                              key={p.key}
-                              className="px-2 py-2.5 border-b text-center"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => togglePrivilege(emp.id, p.key)}
-                                className={`w-5 h-5 rounded border-2 flex items-center justify-center mx-auto transition-colors ${
-                                  userPrivs.has(p.key)
-                                    ? "bg-primary border-primary text-primary-foreground"
-                                    : "border-muted-foreground/30 hover:border-primary/50"
-                                }`}
+                          privs.map((p) => {
+                            const isDisabled = p.key !== "document:view" && !userPrivs.has("document:view");
+                            return (
+                              <td
+                                key={p.key}
+                                className="px-2 py-2.5 border-b text-center"
                               >
-                                {userPrivs.has(p.key) && (
-                                  <Check className="w-3 h-3" />
-                                )}
-                              </button>
-                            </td>
-                          )),
+                                <button
+                                  type="button"
+                                  onClick={() => togglePrivilege(emp.id, p.key)}
+                                  disabled={isDisabled}
+                                  className={`w-5 h-5 rounded border-2 flex items-center justify-center mx-auto transition-colors ${
+                                    isDisabled 
+                                      ? "border-muted-foreground/20 bg-muted/50 cursor-not-allowed opacity-50" 
+                                      : userPrivs.has(p.key)
+                                        ? "bg-primary border-primary text-primary-foreground"
+                                        : "border-muted-foreground/30 hover:border-primary/50"
+                                  }`}
+                                >
+                                  {userPrivs.has(p.key) && (
+                                    <Check className="w-3 h-3" />
+                                  )}
+                                </button>
+                              </td>
+                            );
+                          }),
                         )}
                       </tr>
                     );

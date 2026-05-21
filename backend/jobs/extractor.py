@@ -41,6 +41,39 @@ def extract_docx_blocks(filepath):
             })
     return blocks
 
+def _is_pdf(storage_path):
+    """Check if the storage path points to a PDF file."""
+    return storage_path.lower().endswith('.pdf')
+
+def _process_docx(filepath, version, db):
+    """Process a .docx file using mammoth + python-docx."""
+    # Extract HTML with mammoth
+    with open(filepath, "rb") as docx_file:
+        result = mammoth.convert_to_html(docx_file)
+        extracted_html = result.value
+        
+    # Extract blocks with python-docx
+    blocks = extract_docx_blocks(filepath)
+    extracted_text = "\n\n".join([b.get('text', '') for b in blocks])
+    
+    version.extracted_html = extracted_html
+    version.extracted_blocks_json = json.dumps(blocks)
+    version.extracted_text = extracted_text
+    
+    return blocks
+
+def _process_pdf(filepath, version, db, api_key):
+    """Process a .pdf file using Mistral Document AI OCR."""
+    from jobs.pdf_extractor import extract_pdf_blocks
+    
+    blocks, html, plain_text = extract_pdf_blocks(filepath, api_key)
+    
+    version.extracted_html = html
+    version.extracted_blocks_json = json.dumps(blocks)
+    version.extracted_text = plain_text
+    
+    return blocks
+
 def process_version(app, version_id):
     """Background job to process a document version."""
     with app.app_context():
@@ -56,18 +89,17 @@ def process_version(app, version_id):
             storage_root = app.config['STORAGE_ROOT']
             filepath = resolve_storage_path(storage_root, version.storage_path)
             
-            # Extract HTML with mammoth
-            with open(filepath, "rb") as docx_file:
-                result = mammoth.convert_to_html(docx_file)
-                extracted_html = result.value
-                
-            # Extract blocks with python-docx
-            blocks = extract_docx_blocks(filepath)
-            extracted_text = "\n\n".join([b.get('text', '') for b in blocks])
-            
-            version.extracted_html = extracted_html
-            version.extracted_blocks_json = json.dumps(blocks)
-            version.extracted_text = extracted_text
+            # Route to the appropriate extractor based on file type
+            if _is_pdf(version.storage_path):
+                api_key = app.config.get('MISTRAL_API_KEY')
+                if not api_key:
+                    raise ValueError(
+                        "MISTRAL_API_KEY is not configured. "
+                        "Cannot process PDF files without it."
+                    )
+                blocks = _process_pdf(filepath, version, db, api_key)
+            else:
+                blocks = _process_docx(filepath, version, db)
             
             # Diffing
             if version.version_number > 1:

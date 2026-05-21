@@ -69,9 +69,11 @@ class Document(db.Model):
     def to_dict(self):
         # We also want extraction status of current version
         status = 'success'
+        storage_path = None
         if self.versions:
             current = sorted(self.versions, key=lambda v: v.version_number)[-1]
             status = current.status
+            storage_path = current.storage_path
             
         return {
             'id': self.id,
@@ -80,7 +82,8 @@ class Document(db.Model):
             'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
             'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None,
             'current_version_number': self.current_version_number,
-            'extraction_status': status
+            'extraction_status': status,
+            'storage_path': storage_path
         }
 
 class Version(db.Model):

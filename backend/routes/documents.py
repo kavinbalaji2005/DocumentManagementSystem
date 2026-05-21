@@ -39,8 +39,19 @@ def upload_document():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
         
-    if not file.filename.lower().endswith('.docx'):
-        return jsonify({'error': 'Only .docx files are supported'}), 400
+    if not file.filename.lower().endswith('.docx') and not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'Only .docx and .pdf files are supported'}), 400
+    
+    # Validate MIME type
+    allowed_mimes = {
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/pdf',
+    }
+    if file.content_type and file.content_type not in allowed_mimes:
+        return jsonify({'error': f'Unsupported file type: {file.content_type}. Only .docx and .pdf files are accepted.'}), 400
+    
+    # Determine file extension
+    file_ext = '.pdf' if file.filename.lower().endswith('.pdf') else '.docx'
     
     try:
         folder_id = _parse_optional_folder_id(request.form.get('folder_id'))
@@ -86,13 +97,13 @@ def upload_document():
     doc_dir = resolve_document_directory(storage_root, document.id)
     os.makedirs(doc_dir, exist_ok=True)
     
-    temp_path = os.path.join(doc_dir, 'temp.docx')
+    temp_path = os.path.join(doc_dir, f'temp{file_ext}')
     file.save(temp_path)
     
     file_hash = compute_sha256(temp_path)
     file_size = os.path.getsize(temp_path)
     
-    filename = f"v{document.current_version_number}_{file_hash[:8]}.docx"
+    filename = f"v{document.current_version_number}_{file_hash[:8]}{file_ext}"
     final_path = os.path.join(doc_dir, filename)
     os.replace(temp_path, final_path)
     verified_hash = compute_sha256(final_path)
@@ -155,6 +166,14 @@ def update_document(doc_id):
     
     data = request.json or {}
     new_name = data.get('name', document.name)
+    
+    if new_name != document.name:
+        import os
+        old_ext = os.path.splitext(document.name)[1]
+        if old_ext:
+            new_ext = os.path.splitext(new_name)[1]
+            if not new_ext:
+                new_name += old_ext
     new_folder_id = document.folder_id
 
     if 'folder_id' in data:

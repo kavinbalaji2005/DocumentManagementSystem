@@ -135,3 +135,24 @@ def delete_user(user_id):
     db.session.delete(user)
     db.session.commit()
     return jsonify({'message': 'User deleted'})
+
+@auth_bp.route('/change-password', methods=['POST'])
+@token_required
+def change_password():
+    if g.user.employee_id == 'ELV0001':
+        return jsonify({'error': 'Default admin account password cannot be changed here'}), 403
+        
+    data = request.get_json()
+    if not data or not data.get('current_password') or not data.get('new_password'):
+        return jsonify({'error': 'Must provide current_password and new_password'}), 400
+        
+    if data['current_password'] == data['new_password']:
+        return jsonify({'error': 'New password cannot be the same as current password'}), 400
+        
+    if not g.user.check_password(data['current_password']):
+        return jsonify({'error': 'Incorrect current password'}), 400
+        
+    g.user.set_password(data['new_password'])
+    db.session.commit()
+    
+    return jsonify({'message': 'Password updated successfully'})

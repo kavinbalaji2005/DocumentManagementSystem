@@ -8,14 +8,18 @@ import {
   Loader2,
   Home,
   LogOut,
-  Users
+  Users,
+  FileText,
+  KeyRound
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DocxIcon } from "@/components/ui/DocxIcon";
+import { PdfIcon } from "@/components/ui/PdfIcon";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 
 function FolderNode({
   folder,
@@ -95,7 +99,11 @@ function FolderNode({
               className="flex items-center py-1.5 pl-6 pr-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400"
               onClick={() => onSelectDocument(doc.id)}
             >
-              <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
+              {doc.storage_path?.toLowerCase().endsWith('.pdf') || doc.name?.toLowerCase().endsWith('.pdf') ? (
+                <PdfIcon className="w-4 h-4 mr-2 shrink-0" />
+              ) : (
+                <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
+              )}
               <span className="truncate">{doc.name}</span>
             </div>
           ))}
@@ -117,6 +125,7 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
 
   const isUsersPage = location.pathname === "/users";
   const [isHomeExpanded, setIsHomeExpanded] = useState(true);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
 
   return (
     <div className="border-r border-border bg-muted/30 flex flex-col h-full w-full">
@@ -178,7 +187,11 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
                       className="flex items-center py-1.5 pl-6 pr-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400"
                       onClick={() => onSelectDocument(doc.id)}
                     >
-                      <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
+                      {doc.storage_path?.toLowerCase().endsWith('.pdf') || doc.name?.toLowerCase().endsWith('.pdf') ? (
+                        <PdfIcon className="w-4 h-4 mr-2 shrink-0" />
+                      ) : (
+                        <DocxIcon className="w-4 h-4 mr-2 shrink-0" />
+                      )}
                       <span className="truncate">{doc.name}</span>
                     </div>
                   ))}
@@ -214,17 +227,35 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
               <span className="text-sm font-medium truncate">{user.employee_id}</span>
               <span className="text-xs text-muted-foreground">{user.role}</span>
             </div>
-            <Button
-              variant="destructive"
-              title="Logout"
-              onClick={logout}
-              className="shrink-0"
-            >Logout
-              <LogOut className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {user.employee_id !== "ELV0001" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  title="Change Password"
+                  onClick={() => setIsChangePasswordOpen(true)}
+                  className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+                >
+                  <KeyRound className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="destructive"
+                title="Logout"
+                onClick={logout}
+                className="shrink-0 h-8 px-2"
+              >
+                Logout
+                <LogOut className="h-4 w-4 ml-2" />
+              </Button>
+            </div>
           </div>
         </div>
       )}
+      <ChangePasswordDialog 
+        open={isChangePasswordOpen} 
+        onOpenChange={setIsChangePasswordOpen} 
+      />
     </div>
   );
 }

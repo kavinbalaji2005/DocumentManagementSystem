@@ -16,6 +16,7 @@ import {
   Shield,
 } from "lucide-react";
 import { DocxIcon } from "@/components/ui/DocxIcon";
+import { PdfIcon } from "@/components/ui/PdfIcon";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -195,6 +196,8 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
                   <div className="p-1 rounded-md">
                     {item.type === "folder" ? (
                       <Folder className="w-8 h-8 text-primary" />
+                    ) : (item.storage_path || item.name)?.toLowerCase().endsWith('.pdf') ? (
+                      <PdfIcon className="w-10 h-10" />
                     ) : (
                       <DocxIcon className="w-10 h-10" />
                     )}

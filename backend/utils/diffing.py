@@ -20,22 +20,35 @@ def coerce_blocks(blocks_json=None, extracted_text=None):
     return []
 
 
+import re
+
+def _strip_layout_artifacts(text):
+    if not text:
+        return text
+    text = str(text)
+    # Strip leading vertical pipe
+    text = re.sub(r'^\s*\|\s*', '', text)
+    # Strip trailing dash, hyphen, or pipe
+    text = re.sub(r'\s*[-\|]\s*$', '', text)
+    return text.strip()
+
 def _block_text(block):
     if not isinstance(block, dict):
         return ''
 
     text = block.get('text')
     if text is not None:
-        return str(text).replace('\r\n', '\n').strip()
+        val = str(text).replace('\r\n', '\n').strip()
+        return _strip_layout_artifacts(val)
 
     data = block.get('data')
     if isinstance(data, list):
         rows = []
         for row in data:
             if isinstance(row, list):
-                rows.append(' | '.join(str(cell).strip() for cell in row))
+                rows.append(' | '.join(_strip_layout_artifacts(cell) for cell in row))
             else:
-                rows.append(str(row).strip())
+                rows.append(_strip_layout_artifacts(row))
         return '\n'.join(rows)
 
     return ''
@@ -95,11 +108,13 @@ def compute_block_diff(old_blocks, new_blocks):
             for idx, text in enumerate(old_texts[i1:i2]):
                 block = old_blocks[i1 + idx]
                 diff_html_parts.append(f'<del>{_render_block_html(text)}</del>')
-                diff_changes.append({
-                    'type': 'removed', 
-                    'text': text,
-                    'section': block.get('section', 'General')
-                })
+                
+                if text.strip():
+                    diff_changes.append({
+                        'type': 'removed', 
+                        'text': text,
+                        'section': block.get('section', 'General')
+                    })
                 stats['removed_blocks'] += 1
                 stats['removed_chars'] += len(text)
             continue
@@ -108,11 +123,13 @@ def compute_block_diff(old_blocks, new_blocks):
             for idx, text in enumerate(new_texts[j1:j2]):
                 block = new_blocks[j1 + idx]
                 diff_html_parts.append(f'<ins>{_render_block_html(text)}</ins>')
-                diff_changes.append({
-                    'type': 'added', 
-                    'text': text,
-                    'section': block.get('section', 'General')
-                })
+                
+                if text.strip():
+                    diff_changes.append({
+                        'type': 'added', 
+                        'text': text,
+                        'section': block.get('section', 'General')
+                    })
                 stats['added_blocks'] += 1
                 stats['added_chars'] += len(text)
             continue
@@ -133,12 +150,18 @@ def compute_block_diff(old_blocks, new_blocks):
             if similarity >= 0.5:
                 inline_html, added_chars, removed_chars = _compute_inline_html_diff(old_text, new_text)
                 diff_html_parts.append(f'<p>{inline_html}</p>')
-                diff_changes.append({
-                    'type': 'modified', 
-                    'before': old_text, 
-                    'after': new_text,
-                    'section': block.get('section', 'General')
-                })
+                
+                import re
+                old_norm = re.sub(r'\s+', ' ', old_text).strip()
+                new_norm = re.sub(r'\s+', ' ', new_text).strip()
+                
+                if old_norm != new_norm:
+                    diff_changes.append({
+                        'type': 'modified', 
+                        'before': old_text, 
+                        'after': new_text,
+                        'section': block.get('section', 'General')
+                    })
                 stats['modified_blocks'] += 1
                 stats['added_chars'] += added_chars
                 stats['removed_chars'] += removed_chars
@@ -165,11 +188,13 @@ def compute_block_diff(old_blocks, new_blocks):
             text = old_segment[idx]
             block = old_blocks[i1 + idx]
             diff_html_parts.append(f'<del>{_render_block_html(text)}</del>')
-            diff_changes.append({
-                'type': 'removed', 
-                'text': text,
-                'section': block.get('section', 'General')
-            })
+            
+            if text.strip():
+                diff_changes.append({
+                    'type': 'removed', 
+                    'text': text,
+                    'section': block.get('section', 'General')
+                })
             stats['removed_blocks'] += 1
             stats['removed_chars'] += len(text)
 
@@ -177,11 +202,13 @@ def compute_block_diff(old_blocks, new_blocks):
             text = new_segment[idx]
             block = new_blocks[j1 + idx]
             diff_html_parts.append(f'<ins>{_render_block_html(text)}</ins>')
-            diff_changes.append({
-                'type': 'added', 
-                'text': text,
-                'section': block.get('section', 'General')
-            })
+            
+            if text.strip():
+                diff_changes.append({
+                    'type': 'added', 
+                    'text': text,
+                    'section': block.get('section', 'General')
+                })
             stats['added_blocks'] += 1
             stats['added_chars'] += len(text)
 

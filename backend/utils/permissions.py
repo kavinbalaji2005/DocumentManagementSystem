@@ -68,11 +68,11 @@ def get_effective_permissions(user, resource_type, resource_id):
     ALL_FOLDER_PRIVS = [
         'folder:create', 'folder:update', 'folder:delete',
         'document:view', 'document:create', 'document:update', 'document:delete', 'document:download',
-        'version:view', 'version:create'
+        'version:view', 'version:create', 'ai:diff_summary'
     ]
     ALL_DOC_PRIVS = [
         'document:view', 'document:download', 'document:update', 'document:delete',
-        'version:view', 'version:create'
+        'version:view', 'version:create', 'ai:diff_summary'
     ]
 
     if user.role in ('Admin', 'Manager'):

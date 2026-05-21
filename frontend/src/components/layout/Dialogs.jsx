@@ -269,13 +269,13 @@ export function UploadDialog({
                   <span className="font-semibold">Click to upload</span>
                 </p>
                 <p className="text-xs text-neutral-500">
-                  .docx files only (Max 20MB)
+                  .docx and .pdf files (Max 50MB)
                 </p>
               </div>
               <input
                 type="file"
                 className="hidden"
-                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
                 onChange={(e) => setFile(e.target.files[0])}
               />
             </label>

@@ -38,6 +38,91 @@
     display: none !important;
   }
 
+  /* High-Fidelity PDF Text Diff Page Styles */
+  .text-diff-page {
+    background: #ffffff;
+    max-width: 820px;
+    width: 100%;
+    margin: 1.5rem auto;
+    padding: 3.5rem 4.5rem;
+    font-family: "Georgia", serif;
+    font-size: 15px;
+    line-height: 1.85;
+    color: #232323;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+
+  .text-diff-page:first-child {
+    margin-top: 0;
+    border-top: none;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  /* Style headings inside PDF text flow */
+  .text-diff-page h1,
+  .text-diff-page h3,
+  .text-diff-page h4 {
+    font-family: var(--font-sans), sans-serif;
+    font-weight: 600;
+    color: #0f172a;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .text-diff-page h1 {
+    font-size: 1.6em;
+  }
+
+  .text-diff-page h3 {
+    font-size: 1.25em;
+  }
+
+  /* Clean tables */
+  .text-diff-page table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    font-size: 0.9em;
+  }
+
+  .text-diff-page th,
+  .text-diff-page td {
+    border: 1px solid #e2e8f0;
+    padding: 10px 14px;
+    text-align: left;
+  }
+
+  .text-diff-page th {
+    background: #f8fafc;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  /* High fidelity insertions and deletions */
+  .diff-mode-renderer ins {
+    background: #e6fcf5 !important;
+    color: #0ca678 !important;
+    border-bottom: 2px solid #20c997;
+    text-decoration: none !important;
+    padding: 2px 4px;
+    margin: 0 1px;
+    border-radius: 2px;
+    font-weight: 500;
+  }
+
+  .diff-mode-renderer del {
+    background: #fff5f5 !important;
+    color: #fa5252 !important;
+    border-bottom: 2px solid #ff8787;
+    text-decoration: line-through !important;
+    padding: 2px 4px;
+    margin: 0 1px;
+    border-radius: 2px;
+  }
+
   /* Document HTML Element Styling */
   .document-viewer h1,
   .document-viewer h2,

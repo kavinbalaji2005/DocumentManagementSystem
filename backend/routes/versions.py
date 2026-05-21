@@ -178,7 +178,9 @@ def restore_version(version_id):
     import shutil
     doc_dir = resolve_document_directory(storage_root, document.id)
     os.makedirs(doc_dir, exist_ok=True)
-    filename = f"v{document.current_version_number}_{version.file_hash[:8]}.docx"
+    # Preserve original file extension (.docx or .pdf)
+    original_ext = os.path.splitext(version.storage_path)[1] or '.docx'
+    filename = f"v{document.current_version_number}_{version.file_hash[:8]}{original_ext}"
     new_filepath = os.path.join(doc_dir, filename)
     
     shutil.copy2(old_filepath, new_filepath)
