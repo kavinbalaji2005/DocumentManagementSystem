@@ -11,8 +11,8 @@ import { LoginPage } from "@/pages/LoginPage";
 import { UserManagementPage } from "@/pages/UserManagementPage";
 
 function FileManagerView() {
-  const { folderId } = useParams();
-  const activeFolderId = folderId ? parseInt(folderId, 10) : null;
+  const { folderUuid } = useParams();
+  const activeFolderUuid = folderUuid || null;
   const navigate = useNavigate();
 
   return (
@@ -24,17 +24,17 @@ function FileManagerView() {
         collapsible={false}
         collapsedSize={0}>
         <Sidebar
-          activeFolderId={activeFolderId}
-          onSelectFolder={(id) => navigate(id ? `/folder/${id}` : "/")}
-          onSelectDocument={(id) => navigate(`/document/${id}`)}
+          activeFolderUuid={activeFolderUuid}
+          onSelectFolder={(uuid) => navigate(uuid ? `/folder/${uuid}` : "/")}
+          onSelectDocument={(uuid) => navigate(`/document/${uuid}`)}
         />
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={80}>
         <MainArea
-          activeFolderId={activeFolderId}
-          onSelectFolder={(id) => navigate(id ? `/folder/${id}` : "/")}
-          onSelectDocument={(id) => navigate(`/document/${id}`)}
+          activeFolderUuid={activeFolderUuid}
+          onSelectFolder={(uuid) => navigate(uuid ? `/folder/${uuid}` : "/")}
+          onSelectDocument={(uuid) => navigate(`/document/${uuid}`)}
         />
       </ResizablePanel>
     </ResizablePanelGroup>
@@ -53,9 +53,9 @@ function UserManagementView() {
         collapsible={false}
         collapsedSize={0}>
         <Sidebar
-          activeFolderId={null}
-          onSelectFolder={(id) => navigate(id ? `/folder/${id}` : "/")}
-          onSelectDocument={(id) => navigate(`/document/${id}`)}
+          activeFolderUuid={null}
+          onSelectFolder={(uuid) => navigate(uuid ? `/folder/${uuid}` : "/")}
+          onSelectDocument={(uuid) => navigate(`/document/${uuid}`)}
         />
       </ResizablePanel>
       <ResizableHandle withHandle />
@@ -67,13 +67,21 @@ function UserManagementView() {
 }
 
 function DocumentViewerView() {
-  const { documentId } = useParams();
+  const { documentUuid } = useParams();
   const navigate = useNavigate();
+
+  const handleClose = () => {
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate("/", { replace: true });
+    }
+  };
 
   return (
     <DocumentViewer
-      documentId={parseInt(documentId, 10)}
-      onClose={() => navigate(-1)}
+      documentUuid={documentUuid}
+      onClose={handleClose}
     />
   );
 }
@@ -86,8 +94,8 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           
           <Route path="/" element={<ProtectedRoute><FileManagerView /></ProtectedRoute>} />
-          <Route path="/folder/:folderId" element={<ProtectedRoute><FileManagerView /></ProtectedRoute>} />
-          <Route path="/document/:documentId" element={<ProtectedRoute><DocumentViewerView /></ProtectedRoute>} />
+          <Route path="/folder/:folderUuid" element={<ProtectedRoute><FileManagerView /></ProtectedRoute>} />
+          <Route path="/document/:documentUuid" element={<ProtectedRoute><DocumentViewerView /></ProtectedRoute>} />
           
           <Route path="/users" element={<ProtectedRoute adminOnly={true}><UserManagementView /></ProtectedRoute>} />
         </Routes>

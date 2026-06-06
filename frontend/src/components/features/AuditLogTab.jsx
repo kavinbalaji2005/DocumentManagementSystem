@@ -4,11 +4,11 @@ import { format } from "date-fns";
 import { Loader2, Download, History, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function AuditLogTab({ documentId, documentName }) {
+export function AuditLogTab({ documentUuid, documentName }) {
   const queryClient = useQueryClient();
   const { data: logs, isLoading } = useQuery({
-    queryKey: ["documents", documentId, "audit"],
-    queryFn: () => documentsApi.getAuditLog(documentId),
+    queryKey: ["documents", documentUuid, "audit"],
+    queryFn: () => documentsApi.getAuditLog(documentUuid),
     refetchInterval: 2000, // Poll every 2 seconds for real-time updates
   });
 
@@ -16,8 +16,8 @@ export function AuditLogTab({ documentId, documentName }) {
     if (!logs || logs.length === 0) return;
 
     try {
-      await documentsApi.logAuditExport(documentId);
-      queryClient.invalidateQueries({ queryKey: ["documents", documentId, "audit"] });
+      await documentsApi.logAuditExport(documentUuid);
+      queryClient.invalidateQueries({ queryKey: ["documents", documentUuid, "audit"] });
     } catch (e) {
       console.error("Failed to log audit export:", e);
     }

@@ -17,6 +17,28 @@
     border-radius: 4px;
   }
 
+  .diff-mode-renderer .document-viewer,
+  .ocr-renderer .document-viewer {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .diff-mode-renderer .document-viewer table,
+  .ocr-renderer .document-viewer table {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+  }
+
+  .diff-mode-renderer .document-viewer th,
+  .diff-mode-renderer .document-viewer td,
+  .ocr-renderer .document-viewer th,
+  .ocr-renderer .document-viewer td {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    vertical-align: top;
+  }
+
   .diff-mode-renderer ins {
     background: #dcfce7 !important;
     color: #15803d !important;
@@ -223,6 +245,54 @@
     letter-spacing: 0.03em;
     text-transform: uppercase;
     color: #374151;
+  }
+
+  /* Pulse animation and highlight class for the active diff element */
+  .active-diff-highlight {
+    outline: 3px solid #3b82f6 !important; /* Premium Blue ring */
+    outline-offset: 2px;
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.6) !important;
+    transition: all 0.25s ease-in-out;
+    animation: pulse-highlight 2s infinite;
+  }
+
+  @keyframes pulse-highlight {
+    0% {
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
+      outline-color: rgba(59, 130, 246, 1);
+    }
+    50% {
+      box-shadow: 0 0 22px rgba(59, 130, 246, 0.9);
+      outline-color: rgba(59, 130, 246, 0.7);
+    }
+    100% {
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
+      outline-color: rgba(59, 130, 246, 1);
+    }
+  }
+
+  /* ─── DOCX Page Break Styles ─────────────────────────────────── */
+
+  /* The wrapper created by docx-preview with inWrapper:true */
+  .docx-viewer-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: transparent;
+    padding: 0;
+  }
+
+  /* Each page rendered by docx-preview */
+  .docx-viewer-page {
+    background: #ffffff;
+    border: 1px solid #e4e4e0;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.07);
+    border-radius: 2px;
+    margin-bottom: 8px;
+  }
+
+  .docx-viewer-page:last-child {
+    margin-bottom: 0;
   }
 }
 @layer base {

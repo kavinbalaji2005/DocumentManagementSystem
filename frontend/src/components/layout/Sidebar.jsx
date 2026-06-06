@@ -9,8 +9,9 @@ import {
   Home,
   LogOut,
   Users,
-  FileText,
-  KeyRound
+  KeyRound,
+  Settings,
+  Mail
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,19 +21,26 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { ChangeEmailDialog } from "./ChangeEmailDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 function FolderNode({
   folder,
   level,
-  activeFolderId,
+  activeFolderUuid,
   onSelectFolder,
   onSelectDocument,
 }) {
   const [expanded, setExpanded] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["folders", folder.id, "children"],
-    queryFn: () => foldersApi.getChildren(folder.id),
+    queryKey: ["folders", folder.uuid, "children"],
+    queryFn: () => foldersApi.getChildren(folder.uuid),
     enabled: expanded,
   });
 
@@ -42,10 +50,10 @@ function FolderNode({
   };
 
   const handleClick = () => {
-    onSelectFolder(folder.id);
+    onSelectFolder(folder.uuid);
   };
 
-  const isActive = activeFolderId === folder.id;
+  const isActive = activeFolderUuid === folder.uuid;
 
   return (
     <div className="select-none">
@@ -53,7 +61,7 @@ function FolderNode({
         className={cn(
           "flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm",
           isActive &&
-            "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
+          "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={handleClick}
@@ -85,19 +93,19 @@ function FolderNode({
           )}
           {data?.folders.map((child) => (
             <FolderNode
-              key={child.id}
+              key={child.uuid}
               folder={child}
               level={level + 1}
-              activeFolderId={activeFolderId}
+              activeFolderUuid={activeFolderUuid}
               onSelectFolder={onSelectFolder}
               onSelectDocument={onSelectDocument}
             />
           ))}
           {data?.documents.map((doc) => (
             <div
-              key={doc.id}
+              key={doc.uuid}
               className="flex items-center py-1.5 pl-6 pr-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400"
-              onClick={() => onSelectDocument(doc.id)}
+              onClick={() => onSelectDocument(doc.uuid)}
             >
               {doc.storage_path?.toLowerCase().endsWith('.pdf') || doc.name?.toLowerCase().endsWith('.pdf') ? (
                 <PdfIcon className="w-4 h-4 mr-2 shrink-0" />
@@ -113,7 +121,7 @@ function FolderNode({
   );
 }
 
-export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
+export function Sidebar({ activeFolderUuid, onSelectFolder, onSelectDocument }) {
   const { data, isLoading } = useQuery({
     queryKey: ["folders", "root", "children"],
     queryFn: foldersApi.getRootChildren,
@@ -126,11 +134,12 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
   const isUsersPage = location.pathname === "/users";
   const [isHomeExpanded, setIsHomeExpanded] = useState(true);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [isChangeEmailOpen, setIsChangeEmailOpen] = useState(false);
 
   return (
     <div className="border-r border-border bg-muted/30 flex flex-col h-full w-full">
       <div className="h-14 px-4 border-b border-border flex items-center justify-between shrink-0">
-        <h2 className="font-semibold text-lg tracking-tight">DMS</h2>
+        <h2 className="font-semibold text-lg tracking-tight">DMS v2.0</h2>
       </div>
 
       <ScrollArea className="flex-1 p-2">
@@ -138,8 +147,8 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
           <div
             className={cn(
               "flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm mb-1",
-              activeFolderId === null && !isUsersPage &&
-                "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
+              activeFolderUuid === null && !isUsersPage &&
+              "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
             )}
             onClick={() => {
               onSelectFolder?.(null);
@@ -173,19 +182,19 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
                 <>
                   {data?.folders.map((folder) => (
                     <FolderNode
-                      key={folder.id}
+                      key={folder.uuid}
                       folder={folder}
                       level={1}
-                      activeFolderId={activeFolderId}
+                      activeFolderUuid={activeFolderUuid}
                       onSelectFolder={onSelectFolder}
                       onSelectDocument={onSelectDocument}
                     />
                   ))}
                   {data?.documents.map((doc) => (
                     <div
-                      key={doc.id}
+                      key={doc.uuid}
                       className="flex items-center py-1.5 pl-6 pr-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-neutral-600 dark:text-neutral-400"
-                      onClick={() => onSelectDocument(doc.id)}
+                      onClick={() => onSelectDocument(doc.uuid)}
                     >
                       {doc.storage_path?.toLowerCase().endsWith('.pdf') || doc.name?.toLowerCase().endsWith('.pdf') ? (
                         <PdfIcon className="w-4 h-4 mr-2 shrink-0" />
@@ -209,7 +218,7 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
             className={cn(
               "flex items-center py-1.5 px-2 rounded-md cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm",
               isUsersPage &&
-                "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
+              "bg-neutral-100 dark:bg-neutral-800 font-medium text-neutral-900",
             )}
             onClick={() => navigate("/users")}
           >
@@ -228,17 +237,31 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
               <span className="text-xs text-muted-foreground">{user.role}</span>
             </div>
             <div className="flex items-center gap-1">
-              {user.employee_id !== "ELV0001" && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Change Password"
-                  onClick={() => setIsChangePasswordOpen(true)}
-                  className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
-                >
-                  <KeyRound className="h-4 w-4" />
-                </Button>
+              {!user.is_default_admin && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Modify Account Settings"
+                      className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onClick={() => setIsChangePasswordOpen(true)} className="cursor-pointer">
+                      <KeyRound className="h-4 w-4 mr-2" />
+                      <span>Change Password</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setIsChangeEmailOpen(true)} className="cursor-pointer">
+                      <Mail className="h-4 w-4 mr-2" />
+                      <span>Change Email</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
+
               <Button
                 variant="destructive"
                 title="Logout"
@@ -252,9 +275,13 @@ export function Sidebar({ activeFolderId, onSelectFolder, onSelectDocument }) {
           </div>
         </div>
       )}
-      <ChangePasswordDialog 
-        open={isChangePasswordOpen} 
-        onOpenChange={setIsChangePasswordOpen} 
+      <ChangePasswordDialog
+        open={isChangePasswordOpen}
+        onOpenChange={setIsChangePasswordOpen}
+      />
+      <ChangeEmailDialog
+        open={isChangeEmailOpen}
+        onOpenChange={setIsChangeEmailOpen}
       />
     </div>
   );

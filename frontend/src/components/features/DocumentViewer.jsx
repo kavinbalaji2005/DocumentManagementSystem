@@ -5,7 +5,7 @@ import HtmlDiff from "htmldiff-js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.mjs",
-  import.meta.url
+  import.meta.url,
 ).toString();
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -30,6 +30,10 @@ import {
   Save,
   RotateCcw,
   Copy,
+  ChevronUp,
+  ChevronDown,
+  Lock,
+  AlertTriangle,
 } from "lucide-react";
 import { DocxIcon } from "@/components/ui/DocxIcon";
 import { PdfIcon } from "@/components/ui/PdfIcon";
@@ -56,7 +60,7 @@ function isPdf(path) {
   return path?.toLowerCase().endsWith(".pdf");
 }
 
-function PdfRenderer({ url }) {
+function PdfRenderer({ url, onPagesReady }) {
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -92,6 +96,8 @@ function PdfRenderer({ url }) {
           const viewport = page.getViewport({ scale });
 
           const canvas = document.createElement("canvas");
+          canvas.dataset.pageNumber = String(i);
+          canvas.className = "pdf-page-canvas";
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           canvas.style.width = "100%";
@@ -113,7 +119,15 @@ function PdfRenderer({ url }) {
           await page.render({ canvasContext: ctx, viewport }).promise;
         }
 
-        if (isMounted) setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+          if (onPagesReady && container) {
+            const pages = Array.from(
+              container.querySelectorAll(".pdf-page-canvas"),
+            );
+            requestAnimationFrame(() => onPagesReady(pages));
+          }
+        }
       })
       .catch((err) => {
         if (isMounted) {
@@ -145,55 +159,49 @@ function PdfRenderer({ url }) {
   );
 }
 
-function TextDiffRenderer({ oldVersionId, newVersionId }) {
+function TextDiffRenderer({
+  oldVersionId,
+  newVersionId,
+  onLoaded,
+  onPagesReady,
+}) {
+  const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [pages, setPages] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
     setError(null);
-    setPages([]);
 
     function splitPages(html) {
       if (!html) return [];
-      // Split by page boundary headings
       const parts = html.split(/(?=<h2>Page \d+<\/h2>)/i);
       return parts.filter((p) => p.trim() !== "");
     }
 
-    // Normalizes whitespace, newlines, tabs, and non-breaking spaces inside and between HTML tags
     function sanitizeHtmlForDiff(html) {
       if (!html) return "";
-      // 1. Replace non-breaking spaces (&nbsp; and unicode \u00a0) with regular spaces
       let normalized = html.replace(/&nbsp;/gi, " ");
       normalized = normalized.replace(/\u00a0/g, " ");
-      
-      // 2. Replace all carriage returns, newlines, and tabs with standard spaces
       normalized = normalized.replace(/[\r\n\t]+/g, " ");
-      
-      // 3. Collapse multiple consecutive spaces into a single space
       normalized = normalized.replace(/\s+/g, " ");
-      
-      // 4. Remove spacing between HTML tags
       normalized = normalized.replace(/>\s+</g, "><");
-
       return normalized.trim();
     }
 
-    // Post-processes diff output to strip empty or whitespace-only insertion/deletion blocks (including &nbsp; variants)
     function postProcessDiff(diffHtml) {
       if (!diffHtml) return "";
-      
-      // Strip any <ins> or <del> blocks containing only whitespace, newlines, or non-breaking spaces
       let cleaned = diffHtml.replace(/<ins>(?:\s|&nbsp;|\u00a0)*<\/ins>/gi, "");
       cleaned = cleaned.replace(/<del>(?:\s|&nbsp;|\u00a0)*<\/del>/gi, "");
-      
-      // Clean up empty nested spans inside ins/del tags
-      cleaned = cleaned.replace(/<ins><span[^>]*>(?:\s|&nbsp;|\u00a0)*<\/span><\/ins>/gi, "");
-      cleaned = cleaned.replace(/<del><span[^>]*>(?:\s|&nbsp;|\u00a0)*<\/span><\/del>/gi, "");
-      
+      cleaned = cleaned.replace(
+        /<ins><span[^>]*>(?:\s|&nbsp;|\u00a0)*<\/span><\/ins>/gi,
+        "",
+      );
+      cleaned = cleaned.replace(
+        /<del><span[^>]*>(?:\s|&nbsp;|\u00a0)*<\/span><\/del>/gi,
+        "",
+      );
       return cleaned;
     }
 
@@ -222,11 +230,9 @@ function TextDiffRenderer({ oldVersionId, newVersionId }) {
           const oldPageContent = oldPages[i] || "";
           const newPageContent = newPages[i] || "";
 
-          // Clean the <h2>Page X</h2> tags so they don't double render inside our custom page container
           const cleanOld = oldPageContent.replace(/<h2>Page \d+<\/h2>/i, "");
           const cleanNew = newPageContent.replace(/<h2>Page \d+<\/h2>/i, "");
 
-          // Sanitize both versions to eliminate formatting spacing/newline variances
           const sanitizedOld = sanitizeHtmlForDiff(cleanOld);
           const sanitizedNew = sanitizeHtmlForDiff(cleanNew);
 
@@ -239,9 +245,39 @@ function TextDiffRenderer({ oldVersionId, newVersionId }) {
           });
         }
 
-        if (isMounted) {
-          setPages(computedPages);
+        const fullHtml = computedPages
+          .map(
+            (page) => `
+          <div class="w-full px-16 py-8 overflow-hidden" data-page-number="${page.pageNumber}">
+            <div class="document-viewer !bg-transparent !p-0 !m-0 !border-0 !shadow-none !max-w-none !text-inherit dark:!text-neutral-300" style="font-size: 15px; line-height: 1.85;">
+              ${page.diffHtml}
+            </div>
+            ${
+              computedPages.length > 1
+                ? `
+              <div class="flex justify-center items-center text-xs text-neutral-400 border-t border-neutral-100 dark:border-neutral-800 pt-8 mt-12 font-sans uppercase tracking-wider select-none">
+                <span>Page ${page.pageNumber} of ${computedPages.length}</span>
+              </div>
+            `
+                : ""
+            }
+          </div>
+        `,
+          )
+          .join("");
+
+        if (containerRef.current && isMounted) {
+          containerRef.current.innerHTML = fullHtml;
           setLoading(false);
+          if (onPagesReady) {
+            const pages = Array.from(
+              containerRef.current.querySelectorAll("[data-page-number]"),
+            );
+            requestAnimationFrame(() => onPagesReady(pages));
+          }
+          if (onLoaded) {
+            setTimeout(onLoaded, 100);
+          }
         }
       })
       .catch((err) => {
@@ -272,29 +308,16 @@ function TextDiffRenderer({ oldVersionId, newVersionId }) {
           {error}
         </div>
       )}
-      {!loading &&
-        !error &&
-        pages.map((page) => (
-          <div key={page.pageNumber} className="w-full px-16 py-8">
-            <div
-              className="document-viewer !bg-transparent !p-0 !m-0 !border-0 !shadow-none !max-w-none !text-inherit dark:!text-neutral-300"
-              style={{ fontSize: '15px', lineHeight: '1.85' }}
-              dangerouslySetInnerHTML={{ __html: page.diffHtml }}
-            />
-            {pages.length > 1 && (
-              <div className="flex justify-center items-center text-xs text-neutral-400 border-t border-neutral-100 dark:border-neutral-800 pt-8 mt-12 font-sans uppercase tracking-wider select-none">
-                <span>
-                  Page {page.pageNumber} of {pages.length}
-                </span>
-              </div>
-            )}
-          </div>
-        ))}
+      <div
+        ref={containerRef}
+        className="w-full flex flex-col text-diff-container"
+      />
     </div>
   );
 }
 
-function OcrRenderer({ versionId }) {
+function OcrRenderer({ versionId, onPagesReady }) {
+  const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pages, setPages] = useState([]);
@@ -339,8 +362,26 @@ function OcrRenderer({ versionId }) {
     };
   }, [versionId]);
 
+  useEffect(() => {
+    if (!onPagesReady || loading || error || pages.length === 0) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const raf = requestAnimationFrame(() => {
+      const pageEls = Array.from(
+        container.querySelectorAll("[data-page-number]"),
+      );
+      onPagesReady(pageEls);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [pages, loading, error, onPagesReady]);
+
   return (
-    <div className="relative w-full flex flex-col pt-0 pb-6 min-h-[500px]">
+    <div
+      ref={containerRef}
+      className="ocr-renderer relative w-full flex flex-col pt-0 pb-6 min-h-[500px]"
+    >
       {loading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/50 backdrop-blur-sm z-10 min-h-[400px]">
           <Loader2 className="w-8 h-8 animate-spin text-neutral-300 mb-4" />
@@ -357,10 +398,14 @@ function OcrRenderer({ versionId }) {
       {!loading &&
         !error &&
         pages.map((page) => (
-          <div key={page.pageNumber} className="w-full px-16 py-8">
+          <div
+            key={page.pageNumber}
+            data-page-number={page.pageNumber}
+            className="w-full px-16 py-8 overflow-hidden"
+          >
             <div
               className="document-viewer !bg-transparent !p-0 !m-0 !border-0 !shadow-none !max-w-none !text-inherit dark:!text-neutral-300"
-              style={{ fontSize: '15px', lineHeight: '1.85' }}
+              style={{ fontSize: "15px", lineHeight: "1.85" }}
               dangerouslySetInnerHTML={{ __html: page.html }}
             />
             {pages.length > 1 && (
@@ -376,7 +421,7 @@ function OcrRenderer({ versionId }) {
   );
 }
 
-function DocxRenderer({ url }) {
+function DocxRenderer({ url, onPagesReady }) {
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -395,20 +440,54 @@ function DocxRenderer({ url }) {
       .then((blob) => {
         if (!isMounted) return;
         return docx.renderAsync(blob, containerRef.current, null, {
-          className: "docx-preview-renderer",
-          inWrapper: false,
+          className: "docx-viewer",
+          inWrapper: true,
           ignoreWidth: false,
           ignoreHeight: false,
+          breakPages: true,
+          ignoreLastRenderedPageBreak: false,
         });
       })
       .then(() => {
         if (isMounted) {
           if (containerRef.current) {
+            // Fix bullet characters
             containerRef.current.innerHTML =
               containerRef.current.innerHTML.replace(
                 /[\uf0b7\uf0a7\uf0d8\uf0fc]/g,
                 "•",
               );
+
+            // Inject visual page break dividers between page sections
+            const wrapper =
+              containerRef.current.querySelector(".docx-viewer-wrapper") ||
+              containerRef.current.querySelector(".docx-wrapper") ||
+              containerRef.current;
+
+            let pages = wrapper.querySelectorAll(
+              ".docx-viewer-page, .docx-page, .docx-page-wrapper, .docx-page-section",
+            );
+
+            if (pages.length === 0) {
+              pages = wrapper.querySelectorAll("section");
+            }
+
+            for (let i = 1; i < pages.length; i++) {
+              const divider = document.createElement("div");
+              pages[i].parentNode.insertBefore(divider, pages[i]);
+            }
+
+            const pageList = pages.length ? Array.from(pages) : [wrapper];
+
+            pageList.forEach((page, index) => {
+              if (page && page.dataset) {
+                page.dataset.pageNumber = String(index + 1);
+              }
+            });
+
+            if (onPagesReady) {
+              requestAnimationFrame(() => onPagesReady(pageList));
+            }
           }
           setLoading(false);
         }
@@ -443,7 +522,7 @@ function DocxRenderer({ url }) {
   );
 }
 
-function DocxDiffRenderer({ oldUrl, newUrl }) {
+function DocxDiffRenderer({ oldUrl, newUrl, onLoaded, onPagesReady }) {
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -461,6 +540,7 @@ function DocxDiffRenderer({ oldUrl, newUrl }) {
       .then(async ([oldBlob, newBlob]) => {
         if (!isMounted) return;
 
+        // Render both docs WITHOUT page breaks for clean diffing
         const oldDiv = document.createElement("div");
         const newDiv = document.createElement("div");
 
@@ -470,12 +550,14 @@ function DocxDiffRenderer({ oldUrl, newUrl }) {
             inWrapper: false,
             ignoreWidth: false,
             ignoreHeight: false,
+            breakPages: false,
           }),
           docx.renderAsync(newBlob, newDiv, null, {
             className: "docx-preview-renderer",
             inWrapper: false,
             ignoreWidth: false,
             ignoreHeight: false,
+            breakPages: false,
           }),
         ]);
 
@@ -490,14 +572,86 @@ function DocxDiffRenderer({ oldUrl, newUrl }) {
           "•",
         );
 
-        const diffHtml =
+        const executeDiff =
           HtmlDiff.default && typeof HtmlDiff.default.execute === "function"
-            ? HtmlDiff.default.execute(oldHtml, newHtml)
-            : HtmlDiff.execute(oldHtml, newHtml);
+            ? HtmlDiff.default.execute
+            : HtmlDiff.execute;
+
+        const diffHtml = executeDiff(oldHtml, newHtml);
+
+        // Now render the NEW doc WITH page breaks to find page boundary positions
+        const newPagesDiv = document.createElement("div");
+        await docx.renderAsync(newBlob, newPagesDiv, null, {
+          className: "docx-viewer",
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          breakPages: true,
+          ignoreLastRenderedPageBreak: false,
+        });
+
+        const pages = newPagesDiv.querySelectorAll(
+          ".docx-viewer-page, .docx-page, .docx-page-wrapper, section",
+        );
+        const pageBreakTexts = [];
+        for (let i = 1; i < pages.length; i++) {
+          // Get the first meaningful text node on each page (after page 1)
+          const firstEl = pages[i].querySelector(
+            "p, h1, h2, h3, h4, h5, h6, table, li",
+          );
+          if (firstEl) {
+            const text = firstEl.textContent.trim().substring(0, 60);
+            if (text) pageBreakTexts.push(text);
+          }
+        }
 
         if (containerRef.current && isMounted) {
           containerRef.current.innerHTML = diffHtml;
+          const pageAnchors = [];
+
+          const firstAnchor = document.createElement("div");
+          firstAnchor.dataset.pageNumber = "1";
+          firstAnchor.className = "docx-diff-page-anchor";
+          containerRef.current.prepend(firstAnchor);
+          pageAnchors.push(firstAnchor);
+
+          // Inject page break dividers by finding matching text positions
+          if (pageBreakTexts.length > 0) {
+            const allElements = containerRef.current.querySelectorAll(
+              "p, h1, h2, h3, h4, h5, h6, table, li",
+            );
+            let breakIdx = 0;
+            for (const el of allElements) {
+              if (breakIdx >= pageBreakTexts.length) break;
+              const elText = el.textContent.trim().substring(0, 60);
+              if (elText && elText === pageBreakTexts[breakIdx]) {
+                const divider = document.createElement("div");
+                el.parentNode.insertBefore(divider, el);
+
+                const anchor = document.createElement("div");
+                anchor.dataset.pageNumber = String(breakIdx + 2);
+                anchor.className = "docx-diff-page-anchor";
+                el.parentNode.insertBefore(anchor, el);
+                pageAnchors.push(anchor);
+                breakIdx++;
+              }
+            }
+          }
+
+          if (onPagesReady) {
+            requestAnimationFrame(() =>
+              onPagesReady(
+                pageAnchors.length ? pageAnchors : [containerRef.current],
+              ),
+            );
+          }
+        }
+
+        if (isMounted) {
           setLoading(false);
+          if (onLoaded) {
+            setTimeout(onLoaded, 100);
+          }
         }
       })
       .catch((err) => {
@@ -536,7 +690,7 @@ function DocxDiffRenderer({ oldUrl, newUrl }) {
   );
 }
 
-export function DocumentViewer({ documentId, onClose }) {
+export function DocumentViewer({ documentUuid, onClose }) {
   const queryClient = useQueryClient();
   const { isAdmin, isAdminOrManager } = useAuth();
   const [activeVersionId, setActiveVersionId] = useState(null);
@@ -547,19 +701,272 @@ export function DocumentViewer({ documentId, onClose }) {
   const [editComment, setEditComment] = useState("");
   const [restoreTargetVersion, setRestoreTargetVersion] = useState(null);
 
+  const [totalDiffs, setTotalDiffs] = useState(0);
+  const [currentDiffIndex, setCurrentDiffIndex] = useState(-1);
+  const diffContainerRef = useRef(null);
+  const diffElementsRef = useRef([]);
+
+  const mainAreaRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const pageIndicatorRef = useRef(null);
+  const pageElementsRef = useRef([]);
+  const pageOffsetsRef = useRef([]);
+  const scrollRafRef = useRef(null);
+  const scrollHideTimeoutRef = useRef(null);
+  const isScrollableRef = useRef(false);
+  const [pageIndicator, setPageIndicator] = useState({ current: 0, total: 0 });
+  const [indicatorTop, setIndicatorTop] = useState(0);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [isScrollable, setIsScrollable] = useState(false);
+
+  const handleDiffLoaded = useCallback(() => {
+    if (!diffContainerRef.current) return;
+    const elements = Array.from(
+      diffContainerRef.current.querySelectorAll("ins, del"),
+    );
+    const visibleElements = elements.filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return (
+        rect.width > 0 || rect.height > 0 || el.textContent.trim().length > 0
+      );
+    });
+
+    diffElementsRef.current = visibleElements;
+    setTotalDiffs(visibleElements.length);
+    setCurrentDiffIndex(visibleElements.length > 0 ? 0 : -1);
+  }, []);
+
+  const handleNextDiff = useCallback(() => {
+    if (diffElementsRef.current.length === 0) return;
+    setCurrentDiffIndex((prev) => (prev + 1) % diffElementsRef.current.length);
+  }, []);
+
+  const handlePrevDiff = useCallback(() => {
+    if (diffElementsRef.current.length === 0) return;
+    setCurrentDiffIndex(
+      (prev) =>
+        (prev - 1 + diffElementsRef.current.length) %
+        diffElementsRef.current.length,
+    );
+  }, []);
+
+  const updatePageIndicator = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const mainArea = mainAreaRef.current;
+    const totalPages = pageElementsRef.current.length;
+
+    if (!container || !mainArea || totalPages === 0) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const mainRect = mainArea.getBoundingClientRect();
+    const scrollable = container.scrollHeight - container.clientHeight;
+    const canScroll = scrollable > 2;
+    if (isScrollableRef.current !== canScroll) {
+      isScrollableRef.current = canScroll;
+      setIsScrollable(canScroll);
+    }
+    const progress = scrollable > 0 ? container.scrollTop / scrollable : 0;
+
+    const indicatorHeight = pageIndicatorRef.current?.offsetHeight || 28;
+    const topMin = containerRect.top - mainRect.top + 6;
+    const topMax =
+      containerRect.top -
+      mainRect.top +
+      containerRect.height -
+      indicatorHeight -
+      6;
+    const computedTop =
+      topMax > topMin ? topMin + (topMax - topMin) * progress : topMin;
+
+    const offsets = pageOffsetsRef.current;
+    const targetPosition = container.scrollTop + container.clientHeight / 2;
+    let currentIndex = 0;
+
+    if (offsets.length > 0) {
+      let low = 0;
+      let high = offsets.length - 1;
+      let best = 0;
+
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        if (offsets[mid] <= targetPosition) {
+          best = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+
+      currentIndex = best;
+    }
+
+    const currentPage = Math.min(totalPages, Math.max(1, currentIndex + 1));
+
+    setIndicatorTop(computedTop);
+    setPageIndicator((prev) =>
+      prev.current === currentPage && prev.total === totalPages
+        ? prev
+        : { current: currentPage, total: totalPages },
+    );
+  }, []);
+
+  const rebuildPageMetrics = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container || pageElementsRef.current.length === 0) return;
+
+    const containerRect = container.getBoundingClientRect();
+    pageOffsetsRef.current = pageElementsRef.current.map((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.top - containerRect.top + container.scrollTop;
+    });
+
+    updatePageIndicator();
+  }, [updatePageIndicator]);
+
+  const handlePagesReady = useCallback(
+    (elements) => {
+      pageElementsRef.current = elements || [];
+      pageOffsetsRef.current = [];
+      const totalPages = pageElementsRef.current.length;
+      setPageIndicator({ current: totalPages > 0 ? 1 : 0, total: totalPages });
+
+      requestAnimationFrame(() => {
+        rebuildPageMetrics();
+      });
+    },
+    [rebuildPageMetrics],
+  );
+
+  // Reset diff scanning state when document or active version changes or viewMode changes
+  useEffect(() => {
+    setTotalDiffs(0);
+    setCurrentDiffIndex(-1);
+    diffElementsRef.current = [];
+  }, [activeVersionId, viewMode]);
+
+  useEffect(() => {
+    pageElementsRef.current = [];
+    pageOffsetsRef.current = [];
+    setPageIndicator({ current: 0, total: 0 });
+    setIndicatorTop(0);
+    isScrollableRef.current = false;
+    setIsScrollable(false);
+    setIsScrolling(false);
+  }, [activeVersionId, viewMode]);
+
+  const handleScroll = useCallback(() => {
+    if (scrollHideTimeoutRef.current) {
+      clearTimeout(scrollHideTimeoutRef.current);
+    }
+
+    setIsScrolling(true);
+    scrollHideTimeoutRef.current = setTimeout(() => {
+      setIsScrolling(false);
+    }, 800);
+
+    if (scrollRafRef.current) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      updatePageIndicator();
+    });
+  }, [updatePageIndicator]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+      if (scrollHideTimeoutRef.current) {
+        clearTimeout(scrollHideTimeoutRef.current);
+        scrollHideTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(() => {
+      rebuildPageMetrics();
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [rebuildPageMetrics]);
+
+  // Effect to handle visual highlighting and scrolling
+  useEffect(() => {
+    const elements = diffElementsRef.current;
+    if (
+      currentDiffIndex >= 0 &&
+      currentDiffIndex < elements.length &&
+      viewMode === "diff"
+    ) {
+      const activeEl = elements[currentDiffIndex];
+
+      // Remove focus class from all elements
+      elements.forEach((el) => {
+        el.classList.remove("active-diff-highlight");
+      });
+
+      // Add focus class to active element
+      activeEl.classList.add("active-diff-highlight");
+
+      // Scroll element into view smoothly
+      activeEl.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
+  }, [currentDiffIndex, viewMode]);
+
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    if (viewMode !== "diff" || totalDiffs <= 0) return;
+
+    const handleKeyDown = (e) => {
+      // Disable shortcuts when user is typing in a form input
+      if (
+        document.activeElement.tagName === "INPUT" ||
+        document.activeElement.tagName === "TEXTAREA" ||
+        document.activeElement.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.key === "n" || e.key === "ArrowDown" || e.key === "j") {
+        e.preventDefault();
+        handleNextDiff();
+      } else if (e.key === "p" || e.key === "ArrowUp" || e.key === "k") {
+        e.preventDefault();
+        handlePrevDiff();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [viewMode, totalDiffs, handleNextDiff, handlePrevDiff]);
+
   // Fetch document metadata
-  const { data: document, isLoading: docLoading } = useQuery({
-    queryKey: ["documents", documentId],
-    queryFn: () => documentsApi.get(documentId),
+  const { data: document, isLoading: docLoading, error: docError } = useQuery({
+    queryKey: ["documents", documentUuid],
+    queryFn: () => documentsApi.get(documentUuid),
+    retry: false,
   });
 
   // Effective permissions for the current user on this document
   const perms = document?.effective_permissions || [];
 
   // Fetch versions
-  const { data: versions, isLoading: versionsLoading } = useQuery({
-    queryKey: ["documents", documentId, "versions"],
-    queryFn: () => documentsApi.getVersions(documentId),
+  const { data: versions, isLoading: versionsLoading, error: versionsError } = useQuery({
+    queryKey: ["documents", documentUuid, "versions"],
+    queryFn: () => documentsApi.getVersions(documentUuid),
+    enabled: !!document,
+    retry: false,
   });
 
   // Set initial active version when versions load, and auto-select new versions
@@ -614,24 +1021,24 @@ export function DocumentViewer({ documentId, onClose }) {
     ) {
       const interval = setInterval(() => {
         queryClient.invalidateQueries({
-          queryKey: ["documents", documentId, "versions"],
+          queryKey: ["documents", documentUuid, "versions"],
         });
-        queryClient.invalidateQueries({ queryKey: ["documents", documentId] });
+        queryClient.invalidateQueries({ queryKey: ["documents", documentUuid] });
       }, 3000);
       return () => clearInterval(interval);
     }
-  }, [activeVersion?.status, documentId, queryClient]);
+  }, [activeVersion?.status, documentUuid, queryClient]);
 
   // Handle Restore
   const restoreMutation = useMutation({
     mutationFn: (id) => versionsApi.restore(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["documents", documentId] });
+      queryClient.invalidateQueries({ queryKey: ["documents", documentUuid] });
       queryClient.invalidateQueries({
-        queryKey: ["documents", documentId, "versions"],
+        queryKey: ["documents", documentUuid, "versions"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["documents", documentId, "audit"],
+        queryKey: ["documents", documentUuid, "audit"],
       });
       setRestoreTargetVersion(null);
       toast({
@@ -659,10 +1066,10 @@ export function DocumentViewer({ documentId, onClose }) {
 
       // Also invalidate versions to update the version card
       queryClient.invalidateQueries({
-        queryKey: ["documents", documentId, "versions"],
+        queryKey: ["documents", documentUuid, "versions"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["documents", documentId, "audit"],
+        queryKey: ["documents", documentUuid, "audit"],
       });
 
       toast({ title: "Summary generated" });
@@ -680,10 +1087,10 @@ export function DocumentViewer({ documentId, onClose }) {
       versionsApi.update(id, { name, comment }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["documents", documentId, "versions"],
+        queryKey: ["documents", documentUuid, "versions"],
       });
       queryClient.invalidateQueries({
-        queryKey: ["documents", documentId, "audit"],
+        queryKey: ["documents", documentUuid, "audit"],
       });
       setEditingVersionId(null);
       toast({ title: "Version updated" });
@@ -712,6 +1119,60 @@ export function DocumentViewer({ documentId, onClose }) {
     toast({ title: "Summary copied to comment box" });
   };
 
+  const isUnauthorized = 
+    (docError && docError.response?.status === 403) || 
+    (versionsError && versionsError.response?.status === 403);
+    
+  const isNotFound = 
+    (docError && docError.response?.status === 404) || 
+    (versionsError && versionsError.response?.status === 404);
+
+  if (isUnauthorized) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900 min-h-[600px]">
+        <div className="max-w-md w-full text-center space-y-6 bg-white dark:bg-neutral-950 p-8 rounded-xl shadow-lg border border-neutral-200 dark:border-neutral-800">
+          <div className="mx-auto h-16 w-16 bg-red-100 dark:bg-red-900/30 flex items-center justify-center rounded-full text-red-600 dark:text-red-400">
+            <Lock className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">Unauthorized Access</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              You do not have the required permissions to view this document. If you believe this is an error, please contact your administrator.
+            </p>
+          </div>
+          <div className="pt-4">
+            <Button onClick={onClose} className="w-full">
+              Return to Workspace
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isNotFound || (docError && !docLoading)) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900 min-h-[600px]">
+        <div className="max-w-md w-full text-center space-y-6 bg-white dark:bg-neutral-950 p-8 rounded-xl shadow-lg border border-neutral-200 dark:border-neutral-800">
+          <div className="mx-auto h-16 w-16 bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center rounded-full text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">Document Not Found</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              The requested document could not be located, has been deleted, or you lack permissions.
+            </p>
+          </div>
+          <div className="pt-4">
+            <Button onClick={onClose} className="w-full">
+              Return to Workspace
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (docLoading || versionsLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -721,13 +1182,24 @@ export function DocumentViewer({ documentId, onClose }) {
   }
 
   const hasDiff = activeVersion?.version_number > 1;
+  const showPageIndicator =
+    viewMode === "normal" ||
+    viewMode === "ocr" ||
+    (viewMode === "diff" && isPdf(activeVersion?.storage_path));
+  const versionUploadExtension = activeVersion?.storage_path
+    ? isPdf(activeVersion.storage_path)
+      ? ".pdf"
+      : ".docx"
+    : null;
 
   const handleDownload = async () => {
     if (!activeVersion) return;
     try {
       const url = `${FILE_BASE_URL}/${activeVersion.storage_path}`;
-      const ext = isPdf(activeVersion.storage_path) ? '.pdf' : '.docx';
-      const baseName = document?.name?.replace(/\.(docx|pdf)$/i, '') || `version_${activeVersion.version_number}`;
+      const ext = isPdf(activeVersion.storage_path) ? ".pdf" : ".docx";
+      const baseName =
+        document?.name?.replace(/\.(docx|pdf)$/i, "") ||
+        `version_${activeVersion.version_number}`;
       const filename = `${baseName}${ext}`;
       await filesApi.downloadFile(url, filename);
     } catch (err) {
@@ -784,9 +1256,13 @@ export function DocumentViewer({ documentId, onClose }) {
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div ref={mainAreaRef} className="flex-1 flex overflow-hidden relative">
         {/* Main Content Area */}
-        <div className="flex-1 overflow-auto bg-neutral-100 p-8">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-auto bg-neutral-100 p-8"
+        >
           <div className={`${contentWidthClass} mx-auto w-full mb-4`}>
             <Tabs
               value={viewMode}
@@ -798,7 +1274,11 @@ export function DocumentViewer({ documentId, onClose }) {
                 let cols = 2;
                 if (isPdfDoc) cols++;
                 if (isAdmin) cols++;
-                const colsClass = { 2: "grid-cols-2", 3: "grid-cols-3", 4: "grid-cols-4" }[cols];
+                const colsClass = {
+                  2: "grid-cols-2",
+                  3: "grid-cols-3",
+                  4: "grid-cols-4",
+                }[cols];
                 return (
                   <TabsList className={`grid w-full ${colsClass}`}>
                     <TabsTrigger value="normal">Normal View</TabsTrigger>
@@ -808,7 +1288,9 @@ export function DocumentViewer({ documentId, onClose }) {
                     {isPdfDoc && (
                       <TabsTrigger value="ocr">OCR View</TabsTrigger>
                     )}
-                    {isAdmin && <TabsTrigger value="audit">Audit Log</TabsTrigger>}
+                    {isAdmin && (
+                      <TabsTrigger value="audit">Audit Log</TabsTrigger>
+                    )}
                   </TabsList>
                 );
               })()}
@@ -820,7 +1302,7 @@ export function DocumentViewer({ documentId, onClose }) {
           >
             {viewMode === "audit" ? (
               <AuditLogTab
-                documentId={documentId}
+                documentUuid={documentUuid}
                 documentName={document?.name}
               />
             ) : (
@@ -862,21 +1344,25 @@ export function DocumentViewer({ documentId, onClose }) {
                       {isPdf(activeVersion?.storage_path) ? (
                         <PdfRenderer
                           url={`${FILE_BASE_URL}/${activeVersion.storage_path}`}
+                          onPagesReady={handlePagesReady}
                         />
                       ) : (
                         <DocxRenderer
                           url={`${FILE_BASE_URL}/${activeVersion.storage_path}`}
+                          onPagesReady={handlePagesReady}
                         />
                       )}
                     </div>
                   )}
 
-                {activeVersion?.status === "success" &&
-                  viewMode === "ocr" && (
-                    <div className="w-full flex-1">
-                      <OcrRenderer versionId={activeVersion.id} />
-                    </div>
-                  )}
+                {activeVersion?.status === "success" && viewMode === "ocr" && (
+                  <div className="w-full flex-1">
+                    <OcrRenderer
+                      versionId={activeVersion.id}
+                      onPagesReady={handlePagesReady}
+                    />
+                  </div>
+                )}
 
                 {activeVersion?.status === "success" &&
                   viewMode === "diff" &&
@@ -939,21 +1425,23 @@ export function DocumentViewer({ documentId, onClose }) {
                               </ReactMarkdown>
                             </div>
                             <div className="flex justify-between items-end mt-2">
-                              {perms.includes("document:update") && (
-                                <Button
-                                  size="xs"
-                                  variant="ghost"
-                                  className="h-7 text-xs text-blue-700 hover:bg-blue-100/50 hover:text-blue-800"
-                                  onClick={() =>
-                                    handleTransferToComment(
-                                      diffContent.ai_summary,
-                                    )
-                                  }
-                                >
-                                  <Copy className="w-3 h-3 mr-2" /> Use as
-                                  Comment
-                                </Button>
-                              )}
+                              {perms.includes("version:create") &&
+                                activeVersion?.version_number ===
+                                  document?.current_version_number && (
+                                  <Button
+                                    size="xs"
+                                    variant="ghost"
+                                    className="h-7 text-xs text-blue-700 hover:bg-blue-100/50 hover:text-blue-800"
+                                    onClick={() =>
+                                      handleTransferToComment(
+                                        diffContent.ai_summary,
+                                      )
+                                    }
+                                  >
+                                    <Copy className="w-3 h-3 mr-2" /> Use as
+                                    Change Note
+                                  </Button>
+                                )}
                               {diffContent.stats?.ai_prompt_tokens !==
                                 undefined && (
                                 <span className="text-xs text-blue-400/80 italic font-medium pr-2 pb-1">
@@ -1030,16 +1518,20 @@ export function DocumentViewer({ documentId, onClose }) {
                         }
 
                         return (
-                          <div className="w-full flex-1">
+                          <div ref={diffContainerRef} className="w-full flex-1">
                             {isPdf(activeVersion?.storage_path) ? (
                               <TextDiffRenderer
                                 oldVersionId={previousVersion?.id}
                                 newVersionId={activeVersion?.id}
+                                onLoaded={handleDiffLoaded}
+                                onPagesReady={handlePagesReady}
                               />
                             ) : (
                               <DocxDiffRenderer
                                 oldUrl={`${FILE_BASE_URL}/${previousVersion?.storage_path}`}
                                 newUrl={`${FILE_BASE_URL}/${activeVersion?.storage_path}`}
+                                onLoaded={handleDiffLoaded}
+                                onPagesReady={handlePagesReady}
                               />
                             )}
                           </div>
@@ -1098,13 +1590,13 @@ export function DocumentViewer({ documentId, onClose }) {
                         </div>
                         <div className="space-y-1">
                           <label className="text-[10px] uppercase font-bold text-neutral-400">
-                            Comment
+                            Change Note
                           </label>
                           <textarea
                             className="w-full text-xs border rounded p-1.5 min-h-[60px] focus:outline-none focus:ring-1 focus:ring-blue-400"
                             value={editComment}
                             onChange={(e) => setEditComment(e.target.value)}
-                            placeholder="Add notes about this version..."
+                            placeholder="Describe what changed in this version"
                           />
                         </div>
                         <div className="flex gap-2">
@@ -1148,19 +1640,21 @@ export function DocumentViewer({ documentId, onClose }) {
                                 Current
                               </span>
                             )}
-                            {perms.includes("document:update") && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5 ml-1"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEditing(v);
-                                }}
-                              >
-                                <Edit2 className="w-3 h-3 text-neutral-400" />
-                              </Button>
-                            )}
+                            {perms.includes("version:create") &&
+                              v.version_number ===
+                                document?.current_version_number && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5 ml-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startEditing(v);
+                                  }}
+                                >
+                                  <Edit2 className="w-3 h-3 text-neutral-400" />
+                                </Button>
+                              )}
                           </div>
                           <div className="text-[10px] text-neutral-400 flex items-center">
                             {format(
@@ -1170,11 +1664,20 @@ export function DocumentViewer({ documentId, onClose }) {
                           </div>
                         </div>
 
-                        {v.comment && (
-                          <div className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded border border-neutral-100 mb-2 version-comment-markdown">
-                            <ReactMarkdown>{v.comment}</ReactMarkdown>
+                        <div className="mb-2">
+                          <div className="text-[10px] uppercase font-bold text-neutral-400 mb-1">
+                            Change Note
                           </div>
-                        )}
+                          <div className="text-xs text-neutral-600 bg-neutral-50 p-2 rounded border border-neutral-100 version-comment-markdown">
+                            {v.comment ? (
+                              <ReactMarkdown>{v.comment}</ReactMarkdown>
+                            ) : (
+                              <span className="italic text-neutral-400">
+                                No change note provided.
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
                         <div className="flex justify-between items-center mt-3">
                           <div className="text-[10px] text-neutral-400 font-mono">
@@ -1211,13 +1714,60 @@ export function DocumentViewer({ documentId, onClose }) {
             </ScrollArea>
           </div>
         )}
+
+        {showPageIndicator && pageIndicator.total > 0 && isScrollable && (
+          <div
+            ref={pageIndicatorRef}
+            className={`absolute z-40 right-[332px] pointer-events-none transition-opacity duration-200 ${isScrolling ? "opacity-100" : "opacity-0"}`}
+            style={{ top: indicatorTop }}
+            aria-hidden="true"
+          >
+            <div className="rounded-full bg-white/90 border border-neutral-200 shadow-md px-2.5 py-1 text-[11px] font-semibold text-neutral-700">
+              Page {pageIndicator.current} of {pageIndicator.total}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Vertical Diff Navigation Pill */}
+        {viewMode === "diff" && totalDiffs > 0 && (
+          <div className="absolute right-[344px] top-1/2 -translate-y-1/2 z-30 flex flex-col items-center bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md shadow-2xl rounded-full border border-neutral-200/80 dark:border-neutral-800/80 p-2.5 gap-2.5 transition-all duration-300 hover:shadow-neutral-300/50 hover:border-neutral-300/80">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/80 dark:text-neutral-400 dark:hover:text-neutral-100 dark:hover:bg-neutral-800/80 transition-all active:scale-95"
+              onClick={handlePrevDiff}
+              title="Previous Change (k or ArrowUp)"
+            >
+              <ChevronUp className="w-5 h-5" />
+            </Button>
+            <div className="flex flex-col items-center select-none font-sans px-1">
+              <span className="text-[11px] font-bold text-neutral-800 dark:text-neutral-200 tracking-wider">
+                {currentDiffIndex + 1}
+              </span>
+              <div className="w-4 h-px bg-neutral-200 dark:bg-neutral-700 my-0.5" />
+              <span className="text-[10px] text-neutral-400 dark:text-neutral-500 font-semibold">
+                {totalDiffs}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100/80 dark:text-neutral-400 dark:hover:text-neutral-100 dark:hover:bg-neutral-800/80 transition-all active:scale-95"
+              onClick={handleNextDiff}
+              title="Next Change (j or ArrowDown)"
+            >
+              <ChevronDown className="w-5 h-5" />
+            </Button>
+          </div>
+        )}
       </div>
 
       <UploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
-        documentId={documentId}
+        documentId={documentUuid}
         documentName={document?.name}
+        allowedExtension={versionUploadExtension}
         nextVersionNumber={
           document?.current_version_number
             ? document.current_version_number + 1

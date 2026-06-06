@@ -12,3 +12,6 @@ PyMySQL==1.1.1
 PyJWT==2.8.0
 mistralai>=1.0.0
 markdown>=3.5
+Flask-Talisman==1.1.0
+flask-limiter==3.5.0
+WTForms==3.1.1

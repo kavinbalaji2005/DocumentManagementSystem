@@ -29,7 +29,7 @@ import { Check, Folder, Loader2, Home } from "lucide-react";
 async function fetchAllFolders() {
   const queue = [null];
   const visitedParents = new Set();
-  const discoveredFolderIds = new Set();
+  const discoveredFolderUuids = new Set();
   const folders = [];
 
   while (queue.length > 0) {
@@ -44,10 +44,10 @@ async function fetchAllFolders() {
         : await foldersApi.getChildren(parentId);
 
     for (const folder of data?.folders || []) {
-      if (discoveredFolderIds.has(folder.id)) continue;
-      discoveredFolderIds.add(folder.id);
+      if (discoveredFolderUuids.has(folder.uuid)) continue;
+      discoveredFolderUuids.add(folder.uuid);
       folders.push(folder);
-      queue.push(folder.id);
+      queue.push(folder.uuid);
     }
   }
 
@@ -58,7 +58,7 @@ function flattenFoldersForPicker(folders) {
   const byParent = new Map();
 
   for (const folder of folders) {
-    const parentKey = folder.parent_id ?? "root";
+    const parentKey = folder.parent_uuid ?? "root";
     if (!byParent.has(parentKey)) {
       byParent.set(parentKey, []);
     }
@@ -74,7 +74,7 @@ function flattenFoldersForPicker(folders) {
     const children = byParent.get(parentKey) || [];
     for (const child of children) {
       ordered.push({ ...child, depth });
-      walk(child.id, depth + 1);
+      walk(child.uuid, depth + 1);
     }
   };
 
@@ -86,7 +86,7 @@ function getDescendantFolderIds(folderId, folders) {
   const childrenByParent = new Map();
 
   for (const folder of folders) {
-    const parentKey = folder.parent_id ?? "root";
+    const parentKey = folder.parent_uuid ?? "root";
     if (!childrenByParent.has(parentKey)) {
       childrenByParent.set(parentKey, []);
     }
@@ -100,19 +100,26 @@ function getDescendantFolderIds(folderId, folders) {
     const currentId = stack.pop();
     const children = childrenByParent.get(currentId) || [];
     for (const child of children) {
-      if (descendants.has(child.id)) continue;
-      descendants.add(child.id);
-      stack.push(child.id);
+      if (descendants.has(child.uuid)) continue;
+      descendants.add(child.uuid);
+      stack.push(child.uuid);
     }
   }
 
   return descendants;
 }
 
-export function CreateFolderDialog({ open, onOpenChange, parentId, folderPath }) {
+export function CreateFolderDialog({
+  open,
+  onOpenChange,
+  parentId,
+  folderPath,
+}) {
   const { register, handleSubmit, reset } = useForm();
   const queryClient = useQueryClient();
-  const breadcrumbText = folderPath ? ["Home", ...folderPath.map(f => f.name)].join("/") : "Home";
+  const breadcrumbText = folderPath
+    ? ["Home", ...folderPath.map((f) => f.name)].join("/")
+    : "Home";
   const mutation = useMutation({
     mutationFn: (data) => foldersApi.create(data.name, parentId),
     onSuccess: () => {
@@ -148,7 +155,7 @@ export function CreateFolderDialog({ open, onOpenChange, parentId, folderPath })
         </DialogHeader>
         <p className="text-sm text-neutral-500 bg-neutral-50 p-2">
           <strong>Current Location: </strong>
-            {breadcrumbText}
+          {breadcrumbText}
         </p>
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="grid gap-4 py-4">
@@ -189,13 +196,41 @@ export function UploadDialog({
   documentId = null,
   documentName = null,
   folderPath,
-  nextVersionNumber
+  nextVersionNumber,
+  allowedExtension = null,
 }) {
   const [file, setFile] = useState(null);
+  const [changeNote, setChangeNote] = useState("");
   const queryClient = useQueryClient();
-  const breadcrumbText = folderPath ? ["Home", ...folderPath.map(f => f.name)].join("/") : "Home";
+  const breadcrumbText = folderPath
+    ? ["Home", ...folderPath.map((f) => f.name)].join("/")
+    : "Home";
+  const isVersionUpload = Boolean(documentId);
+  const normalizedAllowedExtension = allowedExtension
+    ? allowedExtension.toLowerCase()
+    : null;
+  const acceptValue =
+    normalizedAllowedExtension === ".pdf"
+      ? ".pdf,application/pdf"
+      : normalizedAllowedExtension === ".docx"
+        ? ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : ".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf";
+  const helperText = isVersionUpload
+    ? normalizedAllowedExtension === ".pdf"
+      ? ".pdf file (Max 50MB)"
+      : normalizedAllowedExtension === ".docx"
+        ? ".docx file (Max 50MB)"
+        : ".docx and .pdf files (Max 50MB)"
+    : ".docx and .pdf files (Max 50MB)";
+  const trimmedChangeNote = changeNote.trim();
   const mutation = useMutation({
-    mutationFn: () => documentsApi.upload(file, folderId, documentId),
+    mutationFn: () =>
+      documentsApi.upload(
+        file,
+        folderId,
+        documentId,
+        isVersionUpload ? trimmedChangeNote : undefined,
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       if (documentId) {
@@ -214,6 +249,7 @@ export function UploadDialog({
       });
       onOpenChange(false);
       setFile(null);
+      setChangeNote("");
     },
     onError: (err) => {
       toast({
@@ -229,21 +265,24 @@ export function UploadDialog({
       open={open}
       onOpenChange={(val) => {
         onOpenChange(val);
-        if (!val) setFile(null);
+        if (!val) {
+          setFile(null);
+          setChangeNote("");
+        }
       }}
     >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {documentId
-              ? `Upload Version ${nextVersionNumber || ''} for ${documentName}`
+              ? `Upload Version ${nextVersionNumber || ""} for ${documentName}`
               : "Upload Document"}
           </DialogTitle>
         </DialogHeader>
         {!documentId && (
           <p className="text-sm text-neutral-500 bg-neutral-50 p-2">
             <strong>Current Location: </strong>
-              {breadcrumbText}
+            {breadcrumbText}
           </p>
         )}
         <div className="grid gap-4 py-4">
@@ -268,15 +307,36 @@ export function UploadDialog({
                 <p className="mb-2 text-sm text-neutral-500">
                   <span className="font-semibold">Click to upload</span>
                 </p>
-                <p className="text-xs text-neutral-500">
-                  .docx and .pdf files (Max 50MB)
-                </p>
+                <p className="text-xs text-neutral-500">{helperText}</p>
               </div>
               <input
                 type="file"
                 className="hidden"
-                accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
-                onChange={(e) => setFile(e.target.files[0])}
+                accept={acceptValue}
+                onChange={(e) => {
+                  const selected = e.target.files[0];
+                  if (!selected) {
+                    setFile(null);
+                    return;
+                  }
+
+                  if (
+                    normalizedAllowedExtension &&
+                    !selected.name
+                      .toLowerCase()
+                      .endsWith(normalizedAllowedExtension)
+                  ) {
+                    toast({
+                      title: "Invalid file type",
+                      description: `Please upload a ${normalizedAllowedExtension} file.`,
+                      variant: "destructive",
+                    });
+                    setFile(null);
+                    return;
+                  }
+
+                  setFile(selected);
+                }}
               />
             </label>
             {file && (
@@ -285,6 +345,25 @@ export function UploadDialog({
               </p>
             )}
           </div>
+          {isVersionUpload && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="change-note" className="flex items-center gap-1">
+                Change Note
+                <span className="text-red-500">*</span>
+              </Label>
+              <textarea
+                id="change-note"
+                className="w-full text-sm border rounded-md p-2 min-h-[90px] focus:outline-none focus:ring-1 focus:ring-blue-400"
+                placeholder="Describe what changed in this version"
+                value={changeNote}
+                onChange={(e) => setChangeNote(e.target.value)}
+                required
+              />
+              <p className="text-[11px] text-neutral-400">
+                This note will appear in version history.
+              </p>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button
@@ -296,7 +375,11 @@ export function UploadDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={!file || mutation.isPending}
+            disabled={
+              !file ||
+              mutation.isPending ||
+              (isVersionUpload && trimmedChangeNote.length === 0)
+            }
           >
             {mutation.isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -316,16 +399,18 @@ export function RenameDialog({ open, onOpenChange, item }) {
   const mutation = useMutation({
     mutationFn: (data) => {
       if (item.type === "folder") {
-        return foldersApi.update(item.id, data.name, item.parent_id);
+        return foldersApi.update(item.uuid, data.name, item.parent_uuid);
       } else {
-        return documentsApi.update(item.id, data.name, item.folder_id);
+        return documentsApi.update(item.uuid, data.name, item.folder_uuid);
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       if (item?.type === "document") {
-        queryClient.invalidateQueries({ queryKey: ["documents", item.id] });
-        queryClient.invalidateQueries({ queryKey: ["documents", item.id, "audit"] });
+        queryClient.invalidateQueries({ queryKey: ["documents", item.uuid] });
+        queryClient.invalidateQueries({
+          queryKey: ["documents", item.uuid, "audit"],
+        });
       }
       toast({ title: "Renamed successfully" });
       onOpenChange(false);
@@ -386,7 +471,7 @@ export function MoveDialog({ open, onOpenChange, item }) {
   const queryClient = useQueryClient();
   const [targetFolderId, setTargetFolderId] = useState(
     item
-      ? ((item.type === "folder" ? item.parent_id : item.folder_id) ?? null)
+      ? ((item.type === "folder" ? item.parent_uuid : item.folder_uuid) ?? null)
       : null,
   );
 
@@ -403,18 +488,18 @@ export function MoveDialog({ open, onOpenChange, item }) {
 
   const blockedFolderIds = useMemo(() => {
     if (!item || item.type !== "folder") return new Set();
-    const descendants = getDescendantFolderIds(item.id, allFolders);
-    descendants.add(item.id);
+    const descendants = getDescendantFolderIds(item.uuid, allFolders);
+    descendants.add(item.uuid);
     return descendants;
   }, [allFolders, item]);
 
   const destinationFolders = useMemo(
-    () => orderedFolders.filter((folder) => !blockedFolderIds.has(folder.id)),
+    () => orderedFolders.filter((folder) => !blockedFolderIds.has(folder.uuid)),
     [orderedFolders, blockedFolderIds],
   );
 
   const currentFolderId = item
-    ? ((item.type === "folder" ? item.parent_id : item.folder_id) ?? null)
+    ? ((item.type === "folder" ? item.parent_uuid : item.folder_uuid) ?? null)
     : null;
   const destinationChanged = targetFolderId !== currentFolderId;
 
@@ -422,15 +507,17 @@ export function MoveDialog({ open, onOpenChange, item }) {
     mutationFn: async () => {
       if (!item) return null;
       if (item.type === "folder") {
-        return foldersApi.update(item.id, item.name, targetFolderId);
+        return foldersApi.update(item.uuid, item.name, targetFolderId);
       }
-      return documentsApi.update(item.id, item.name, targetFolderId);
+      return documentsApi.update(item.uuid, item.name, targetFolderId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       if (item?.type === "document") {
-        queryClient.invalidateQueries({ queryKey: ["documents", item.id] });
-        queryClient.invalidateQueries({ queryKey: ["documents", item.id, "audit"] });
+        queryClient.invalidateQueries({ queryKey: ["documents", item.uuid] });
+        queryClient.invalidateQueries({
+          queryKey: ["documents", item.uuid, "audit"],
+        });
       }
       toast({ title: "Moved successfully" });
       onOpenChange(false);
@@ -468,11 +555,10 @@ export function MoveDialog({ open, onOpenChange, item }) {
                 <button
                   type="button"
                   onClick={() => setTargetFolderId(null)}
-                  className={`w-full flex items-center justify-between rounded px-2 py-1.5 text-sm text-left ${
-                    targetFolderId === null
+                  className={`w-full flex items-center justify-between rounded px-2 py-1.5 text-sm text-left ${targetFolderId === null
                       ? "bg-blue-50 text-blue-700"
                       : "hover:bg-neutral-100"
-                  }`}
+                    }`}
                 >
                   <span className="flex items-center">
                     <Home className="w-4 h-4 mr-2" />
@@ -483,21 +569,20 @@ export function MoveDialog({ open, onOpenChange, item }) {
 
                 {destinationFolders.map((folder) => (
                   <button
-                    key={folder.id}
+                    key={folder.uuid}
                     type="button"
-                    onClick={() => setTargetFolderId(folder.id)}
-                    className={`w-full flex items-center justify-between rounded px-2 py-1.5 text-sm text-left ${
-                      targetFolderId === folder.id
+                    onClick={() => setTargetFolderId(folder.uuid)}
+                    className={`w-full flex items-center justify-between rounded px-2 py-1.5 text-sm text-left ${targetFolderId === folder.uuid
                         ? "bg-blue-50 text-blue-700"
                         : "hover:bg-neutral-100"
-                    }`}
+                      }`}
                     style={{ paddingLeft: `${(folder.depth + 1) * 14}px` }}
                   >
                     <span className="flex items-center">
                       <Folder className="w-4 h-4 mr-2" />
                       {folder.name}
                     </span>
-                    {targetFolderId === folder.id && (
+                    {targetFolderId === folder.uuid && (
                       <Check className="w-4 h-4" />
                     )}
                   </button>
@@ -536,24 +621,24 @@ export function MoveDialog({ open, onOpenChange, item }) {
 export function DeleteDialog({ open, onOpenChange, item }) {
   const queryClient = useQueryClient();
   const shouldLoadPreview =
-    open && item?.type === "folder" && Boolean(item?.id);
+    open && item?.type === "folder" && Boolean(item?.uuid);
 
   const {
     data: deletePreview,
     isLoading: loadingPreview,
     isError: previewError,
   } = useQuery({
-    queryKey: ["folders", item?.id, "delete-preview"],
-    queryFn: () => foldersApi.getDeletePreview(item.id),
+    queryKey: ["folders", item?.uuid, "delete-preview"],
+    queryFn: () => foldersApi.getDeletePreview(item.uuid),
     enabled: shouldLoadPreview,
   });
 
   const mutation = useMutation({
     mutationFn: () => {
       if (item.type === "folder") {
-        return foldersApi.delete(item.id);
+        return foldersApi.delete(item.uuid);
       } else {
-        return documentsApi.delete(item.id);
+        return documentsApi.delete(item.uuid);
       }
     },
     onSuccess: () => {

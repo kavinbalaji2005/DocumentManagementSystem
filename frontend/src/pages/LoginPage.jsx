@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/card";
 
 export function LoginPage() {
-  const [employeeId, setEmployeeId] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
@@ -26,11 +26,14 @@ export function LoginPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await login(employeeId, password);
+      await login(identifier, password);
       toast({
         title: "Logged in successfully",
       });
-      navigate("/", { replace: true });
+      const fromPath = location.state?.from
+        ? `${location.state.from.pathname}${location.state.from.search}${location.state.from.hash}`
+        : "/";
+      navigate(fromPath, { replace: true });
     } catch (error) {
       toast({
         title: "Login failed",
@@ -55,17 +58,17 @@ export function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="employeeId">Employee ID</Label>
+              <Label htmlFor="identifier">Employee ID or Email</Label>
               <Input
-                id="employeeId"
+                id="identifier"
                 type="text"
-                placeholder="e.g. ELV0001"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
+                placeholder="Employee ID or Email Address"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 required
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input

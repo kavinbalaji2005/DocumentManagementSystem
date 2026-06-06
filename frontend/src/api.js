@@ -25,23 +25,28 @@ api.interceptors.response.use(
       window.dispatchEvent(new Event("auth-unauthorized"));
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export const FILE_BASE_URL = `${API_URL}/files`;
 
 export const authApi = {
-  login: (employee_id, password) =>
-    api.post("/auth/login", { employee_id, password }).then((res) => res.data),
+  login: (identifier, password) =>
+    api.post("/auth/login", { identifier, password }).then((res) => res.data),
   getMe: () => api.get("/auth/me").then((res) => res.data),
   changePassword: (current_password, new_password) =>
-    api.post("/auth/change-password", { current_password, new_password }).then((res) => res.data),
+    api
+      .post("/auth/change-password", { current_password, new_password })
+      .then((res) => res.data),
+  changeEmail: (email) =>
+    api.post("/auth/change-email", { email }).then((res) => res.data),
 };
 
 export const usersApi = {
   getAll: () => api.get("/auth/users").then((res) => res.data),
   create: (data) => api.post("/auth/users", data).then((res) => res.data),
-  update: (id, data) => api.patch(`/auth/users/${id}`, data).then((res) => res.data),
+  update: (id, data) =>
+    api.patch(`/auth/users/${id}`, data).then((res) => res.data),
   delete: (id) => api.delete(`/auth/users/${id}`).then((res) => res.data),
 };
 
@@ -61,15 +66,24 @@ export const foldersApi = {
   getPermissions: (id) =>
     api.get(`/folders/${id}/permissions`).then((res) => res.data),
   setPermissions: (id, permissions) =>
-    api.put(`/folders/${id}/permissions`, { permissions }).then((res) => res.data),
+    api
+      .put(`/folders/${id}/permissions`, { permissions })
+      .then((res) => res.data),
+  getGroupPermissions: (id) =>
+    api.get(`/folders/${id}/group-permissions`).then((res) => res.data),
+  setGroupPermissions: (id, permissions) =>
+    api
+      .put(`/folders/${id}/group-permissions`, { permissions })
+      .then((res) => res.data),
 };
 
 export const documentsApi = {
-  upload: (file, folder_id, document_id) => {
+  upload: (file, folder_id, document_id, changeNote) => {
     const formData = new FormData();
     formData.append("file", file);
     if (folder_id) formData.append("folder_id", folder_id);
     if (document_id) formData.append("document_id", document_id);
+    if (changeNote !== undefined) formData.append("change_note", changeNote);
     return api
       .post("/documents/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -89,7 +103,15 @@ export const documentsApi = {
   getPermissions: (id) =>
     api.get(`/documents/${id}/permissions`).then((res) => res.data),
   setPermissions: (id, permissions) =>
-    api.put(`/documents/${id}/permissions`, { permissions }).then((res) => res.data),
+    api
+      .put(`/documents/${id}/permissions`, { permissions })
+      .then((res) => res.data),
+  getGroupPermissions: (id) =>
+    api.get(`/documents/${id}/group-permissions`).then((res) => res.data),
+  setGroupPermissions: (id, permissions) =>
+    api
+      .put(`/documents/${id}/group-permissions`, { permissions })
+      .then((res) => res.data),
 };
 
 export const versionsApi = {
@@ -108,8 +130,13 @@ export const aiApi = {
     api.post("/ai/summarize-diff", { version_id }).then((res) => res.data),
 };
 
+export const searchApi = {
+  query: (q) => api.get(`/search`, { params: { q } }).then((res) => res.data),
+};
+
 export const filesApi = {
-  getBlob: (url, params = {}) => api.get(url, { responseType: "blob", params }).then((res) => res.data),
+  getBlob: (url, params = {}) =>
+    api.get(url, { responseType: "blob", params }).then((res) => res.data),
   downloadFile: async (url, filename) => {
     const blob = await filesApi.getBlob(url, { download: "true" });
     const objectUrl = window.URL.createObjectURL(blob);
@@ -120,5 +147,22 @@ export const filesApi = {
     link.click();
     link.parentNode.removeChild(link);
     window.URL.revokeObjectURL(objectUrl);
-  }
+  },
+};
+
+export const groupsApi = {
+  getAll: () => api.get("/groups").then((res) => res.data),
+  create: (data) => api.post("/groups", data).then((res) => res.data),
+  update: (id, data) =>
+    api.patch(`/groups/${id}`, data).then((res) => res.data),
+  delete: (id) => api.delete(`/groups/${id}`).then((res) => res.data),
+  getMembers: (id) => api.get(`/groups/${id}/members`).then((res) => res.data),
+  addMembers: (id, userIds) =>
+    api.post(`/groups/${id}/members`, { user_ids: userIds }).then((res) => res.data),
+  removeMember: (id, userId) =>
+    api.delete(`/groups/${id}/members/${userId}`).then((res) => res.data),
+  transfer: (data) =>
+    api.post("/groups/transfer", data).then((res) => res.data),
+  getUngrouped: () =>
+    api.get("/groups/ungrouped").then((res) => res.data),
 };

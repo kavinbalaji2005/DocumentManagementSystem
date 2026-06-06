@@ -133,9 +133,12 @@ def update_version(version_id):
     version = Version.query.get_or_404(version_id)
     
     # Permission check via document
-    denied = require_permission('document', version.document_id, 'document:update')
+    denied = require_permission('document', version.document_id, 'version:create')
     if denied:
         return denied
+        
+    if version.version_number != version.document.current_version_number:
+        return jsonify({'error': 'Only the current version can be modified'}), 403
     
     data = request.get_json() or {}
     
@@ -203,6 +206,17 @@ def restore_version(version_id):
         'restored_from_version': version.version_number,
         'new_version': document.current_version_number
     })
+
+    # Notify: version restored
+    from utils.mail import notify_document_event
+    version_label = version.name if version.name else f'Version {version.version_number}'
+    notify_document_event(
+        current_app._get_current_object(), document.id,
+        'VERSION_RESTORED', g.user,
+        extra_details={
+            'Restored From': version_label,
+            'New Version': f'v{document.current_version_number}',
+        })
     
     # Trigger background extraction job
     import threading

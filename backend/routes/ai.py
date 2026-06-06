@@ -11,7 +11,7 @@ ai_bp = Blueprint('ai', __name__, url_prefix='/ai')
 
 SYSTEM_INSTRUCTION = """You are a Document Analyst. You will receive a list of changes grouped by their document SECTION.
 
-Your task is to provide a clean, high-level summary of only the most significant changes.
+Your task is to provide a clean, high-level exact summary of only the most significant changes.
 
 MARKDOWN STRUCTURE:
 ### **DELETIONS**
@@ -23,13 +23,12 @@ MARKDOWN STRUCTURE:
 
 RULES:
 - **Be Highly Selective**: Only report changes that significantly alter the document's meaning or data. Omit minor details.
-- **Ignore OCR Artifacts**: Because the text is extracted from PDFs, sometimes text is merged into titles, or lists are parsed as tables in different versions. If you see text removed from one place and added to another, or merged into a header, DO NOT report it as a modification, addition, or deletion. ONLY report true, semantic data changes.
 - **Extreme Brevity**: Use sentence fragments.
 - **Formatting**: Use the exact headers shown above. Omit a header if its category has no major changes.
 - **Delta**: For modifications, use the format: "**Old Value** → **New Value**".
 - **Direct Output**: No preamble and no sign-off. Jump straight to the headers."""
 
-PDF_SYSTEM_INSTRUCTION = """You are a strict PDF changelog generator. You receive a machine-generated diff of text blocks extracted from two PDF versions. Each change is tagged ADDED, REMOVED, or MODIFIED and grouped under a SECTION label that contains the Page number.
+PDF_SYSTEM_INSTRUCTION = """You are a PDF changelog generator. You receive a machine-generated diff of text blocks extracted from two PDF versions. Each change is tagged ADDED, REMOVED, or MODIFIED and grouped under a SECTION label that contains the Page number.
 
 Your ONLY job is to output a concise, highly readable changelog in the EXACT markdown format below.
 
@@ -170,19 +169,36 @@ def _compute_robust_pdf_diff(old_text, new_text):
         if old_norm == new_norm:
             continue
             
-        matcher = difflib.SequenceMatcher(None, old_norm.split(), new_norm.split())
+        from diff_match_patch import diff_match_patch
+        dmp = diff_match_patch()
+        diffs = dmp.diff_main(old_norm, new_norm)
+        dmp.diff_cleanupSemantic(diffs)
         
-        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == 'replace':
-                old_chunk = " ".join(old_norm.split()[i1:i2])
-                new_chunk = " ".join(new_norm.split()[j1:j2])
-                modified.append({'before': old_chunk, 'after': new_chunk, 'section': section})
-            elif tag == 'delete':
-                chunk = " ".join(old_norm.split()[i1:i2])
-                removed.append({'text': chunk, 'section': section})
-            elif tag == 'insert':
-                chunk = " ".join(new_norm.split()[j1:j2])
-                added.append({'text': chunk, 'section': section})
+        i_diff = 0
+        while i_diff < len(diffs):
+            op, text = diffs[i_diff]
+            
+            # Look ahead for a replacement pair (delete followed by insert, or insert followed by delete)
+            if i_diff + 1 < len(diffs):
+                next_op, next_text = diffs[i_diff + 1]
+                if (op == -1 and next_op == 1) or (op == 1 and next_op == -1):
+                    # It's a modification
+                    before = text if op == -1 else next_text
+                    after = next_text if next_op == 1 else text
+                    
+                    if before.strip() or after.strip():
+                        modified.append({'before': before.strip(), 'after': after.strip(), 'section': section})
+                        
+                    i_diff += 2
+                    continue
+                    
+            if text.strip():
+                if op == 1:
+                    added.append({'text': text.strip(), 'section': section})
+                elif op == -1:
+                    removed.append({'text': text.strip(), 'section': section})
+                    
+            i_diff += 1
                 
     return added, removed, modified
 

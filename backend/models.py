@@ -1,10 +1,11 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
+import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
 
-def utc_now():
-    return datetime.now(timezone.utc)
+def ist_now():
+    return datetime.now(timezone(timedelta(hours=5, minutes=30)))
 
 db = SQLAlchemy()
 
@@ -12,10 +13,12 @@ class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     employee_id = db.Column(db.String(50), unique=True, nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='Employee')
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    group_id = db.Column(db.Integer, db.ForeignKey('user_groups.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=ist_now)
+    updated_at = db.Column(db.DateTime, default=ist_now, onupdate=ist_now)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -24,21 +27,32 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def to_dict(self):
+        from flask import current_app
+        try:
+            default_admin_id = current_app.config.get('DEFAULT_ADMIN_ID', 'ELV0001')
+        except RuntimeError:
+            default_admin_id = 'ELV0001'
+            
         return {
             'id': self.id,
             'employee_id': self.employee_id,
+            'email': self.email,
             'role': self.role,
-            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None
+            'group_id': self.group_id,
+            'group_name': self.group.name if self.group else None,
+            'is_default_admin': self.employee_id == default_admin_id,
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.updated_at else None
         }
 
 class Folder(db.Model):
     __tablename__ = 'folders'
     id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(255), nullable=False)
     parent_id = db.Column(db.Integer, db.ForeignKey('folders.id', ondelete='CASCADE'), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    created_at = db.Column(db.DateTime, default=ist_now)
+    updated_at = db.Column(db.DateTime, default=ist_now, onupdate=ist_now)
     
     # Relationships
     children = db.relationship('Folder', backref=db.backref('parent', remote_side=[id]), cascade="all, delete-orphan")
@@ -47,20 +61,23 @@ class Folder(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'uuid': self.uuid,
             'name': self.name,
             'parent_id': self.parent_id,
-            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None,
+            'parent_uuid': self.parent.uuid if self.parent else None,
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.updated_at else None,
             'child_count': len(self.children) + len(self.documents)
         }
 
 class Document(db.Model):
     __tablename__ = 'documents'
     id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(255), nullable=False)
     folder_id = db.Column(db.Integer, db.ForeignKey('folders.id', ondelete='CASCADE'), nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    created_at = db.Column(db.DateTime, default=ist_now)
+    updated_at = db.Column(db.DateTime, default=ist_now, onupdate=ist_now)
     current_version_number = db.Column(db.Integer, default=0)
     
     # Relationships
@@ -70,17 +87,24 @@ class Document(db.Model):
         # We also want extraction status of current version
         status = 'success'
         storage_path = None
-        if self.versions:
-            current = sorted(self.versions, key=lambda v: v.version_number)[-1]
-            status = current.status
-            storage_path = current.storage_path
+        if self.current_version_number is not None and self.current_version_number > 0:
+            # Use version_number index directly instead of O(n) sort
+            current = Version.query.filter_by(
+                document_id=self.id,
+                version_number=self.current_version_number
+            ).first()
+            if current:
+                status = current.status
+                storage_path = current.storage_path
             
         return {
             'id': self.id,
+            'uuid': self.uuid,
             'name': self.name,
             'folder_id': self.folder_id,
-            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None,
+            'folder_uuid': self.folder.uuid if self.folder else None,
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.updated_at else None,
             'current_version_number': self.current_version_number,
             'extraction_status': status,
             'storage_path': storage_path
@@ -111,7 +135,7 @@ class Version(db.Model):
     name = db.Column(db.String(255), nullable=True) # Custom version name
     comment = db.Column(db.Text, nullable=True) # User comments
     
-    created_at = db.Column(db.DateTime, default=utc_now)
+    created_at = db.Column(db.DateTime, default=ist_now)
 
     def to_dict(self):
         stats = {}
@@ -133,7 +157,7 @@ class Version(db.Model):
             'error_message': self.error_message,
             'stats': stats,
             'ai_summary': self.ai_summary,
-            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None
         }
 
 class AuditLog(db.Model):
@@ -143,7 +167,7 @@ class AuditLog(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     action = db.Column(db.String(50), nullable=False)
     details = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=utc_now)
+    created_at = db.Column(db.DateTime, default=ist_now)
 
     # Relationships
     user = db.relationship('User', backref='audit_logs')
@@ -157,7 +181,7 @@ class AuditLog(db.Model):
             'user': self.user.to_dict() if self.user else None,
             'action': self.action,
             'details': self.details,
-            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None
         }
 
 class ResourcePermission(db.Model):
@@ -167,8 +191,8 @@ class ResourcePermission(db.Model):
     resource_type = db.Column(db.String(20), nullable=False)  # 'folder' or 'document'
     resource_id = db.Column(db.Integer, nullable=False)
     privileges = db.Column(db.Text, nullable=False, default='[]')  # JSON array of privilege strings
-    created_at = db.Column(db.DateTime, default=utc_now)
-    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+    created_at = db.Column(db.DateTime, default=ist_now)
+    updated_at = db.Column(db.DateTime, default=ist_now, onupdate=ist_now)
 
     # Relationships
     user = db.relationship('User', backref='resource_permissions')
@@ -194,6 +218,63 @@ class ResourcePermission(db.Model):
             'resource_type': self.resource_type,
             'resource_id': self.resource_id,
             'privileges': self.get_privileges(),
-            'created_at': self.created_at.replace(tzinfo=timezone.utc).isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.replace(tzinfo=timezone.utc).isoformat() if self.updated_at else None
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.updated_at else None
+        }
+
+class UserGroup(db.Model):
+    __tablename__ = 'user_groups'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=ist_now)
+    updated_at = db.Column(db.DateTime, default=ist_now, onupdate=ist_now)
+
+    # Relationships
+    members = db.relationship('User', backref='group', lazy='dynamic')
+    permissions = db.relationship('GroupPermission', backref='group', cascade='all, delete-orphan')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'member_count': self.members.count(),
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.updated_at else None
+        }
+
+class GroupPermission(db.Model):
+    __tablename__ = 'group_permissions'
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('user_groups.id', ondelete='CASCADE'), nullable=False)
+    resource_type = db.Column(db.String(20), nullable=False)  # 'folder' or 'document'
+    resource_id = db.Column(db.Integer, nullable=False)
+    privileges = db.Column(db.Text, nullable=False, default='[]')  # JSON array of privilege strings
+    created_at = db.Column(db.DateTime, default=ist_now)
+    updated_at = db.Column(db.DateTime, default=ist_now, onupdate=ist_now)
+
+    __table_args__ = (
+        db.UniqueConstraint('group_id', 'resource_type', 'resource_id', name='uq_group_resource'),
+    )
+
+    def get_privileges(self):
+        try:
+            return json.loads(self.privileges)
+        except (TypeError, ValueError):
+            return []
+
+    def set_privileges(self, privs):
+        self.privileges = json.dumps(privs)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'group_id': self.group_id,
+            'group': self.group.to_dict() if self.group else None,
+            'resource_type': self.resource_type,
+            'resource_id': self.resource_id,
+            'privileges': self.get_privileges(),
+            'created_at': self.created_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.replace(tzinfo=timezone(timedelta(hours=5, minutes=30))).isoformat() if self.updated_at else None
         }

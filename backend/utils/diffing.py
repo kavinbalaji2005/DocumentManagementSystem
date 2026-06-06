@@ -137,80 +137,29 @@ def compute_block_diff(old_blocks, new_blocks):
         # replace
         old_segment = old_texts[i1:i2]
         new_segment = new_texts[j1:j2]
-        paired_count = min(len(old_segment), len(new_segment))
-
-        for idx in range(paired_count):
-            old_text = old_segment[idx]
-            new_text = new_segment[idx]
-            block = new_blocks[j1 + idx]
-            old_block = old_blocks[i1 + idx]
+        
+        old_text_joined = "\n".join(old_segment)
+        new_text_joined = "\n".join(new_segment)
+        
+        inline_html, added_chars, removed_chars = _compute_inline_html_diff(old_text_joined, new_text_joined)
+        diff_html_parts.append(f'<p>{inline_html}</p>')
+        
+        import re
+        old_norm = re.sub(r'\s+', ' ', old_text_joined).strip()
+        new_norm = re.sub(r'\s+', ' ', new_text_joined).strip()
+        
+        if old_norm != new_norm:
+            block = new_blocks[j1] if j1 < len(new_blocks) else old_blocks[i1]
+            diff_changes.append({
+                'type': 'modified', 
+                'before': old_text_joined, 
+                'after': new_text_joined,
+                'section': block.get('section', 'General')
+            })
             
-            similarity = SequenceMatcher(None, old_text, new_text).ratio()
-
-            if similarity >= 0.5:
-                inline_html, added_chars, removed_chars = _compute_inline_html_diff(old_text, new_text)
-                diff_html_parts.append(f'<p>{inline_html}</p>')
-                
-                import re
-                old_norm = re.sub(r'\s+', ' ', old_text).strip()
-                new_norm = re.sub(r'\s+', ' ', new_text).strip()
-                
-                if old_norm != new_norm:
-                    diff_changes.append({
-                        'type': 'modified', 
-                        'before': old_text, 
-                        'after': new_text,
-                        'section': block.get('section', 'General')
-                    })
-                stats['modified_blocks'] += 1
-                stats['added_chars'] += added_chars
-                stats['removed_chars'] += removed_chars
-            else:
-                diff_html_parts.append(f'<del>{_render_block_html(old_text)}</del>')
-                diff_changes.append({
-                    'type': 'removed', 
-                    'text': old_text,
-                    'section': old_block.get('section', 'General')
-                })
-                stats['removed_blocks'] += 1
-                stats['removed_chars'] += len(old_text)
-                
-                diff_html_parts.append(f'<ins>{_render_block_html(new_text)}</ins>')
-                diff_changes.append({
-                    'type': 'added', 
-                    'text': new_text,
-                    'section': block.get('section', 'General')
-                })
-                stats['added_blocks'] += 1
-                stats['added_chars'] += len(new_text)
-
-        for idx in range(paired_count, len(old_segment)):
-            text = old_segment[idx]
-            block = old_blocks[i1 + idx]
-            diff_html_parts.append(f'<del>{_render_block_html(text)}</del>')
-            
-            if text.strip():
-                diff_changes.append({
-                    'type': 'removed', 
-                    'text': text,
-                    'section': block.get('section', 'General')
-                })
-            stats['removed_blocks'] += 1
-            stats['removed_chars'] += len(text)
-
-        for idx in range(paired_count, len(new_segment)):
-            text = new_segment[idx]
-            block = new_blocks[j1 + idx]
-            diff_html_parts.append(f'<ins>{_render_block_html(text)}</ins>')
-            
-            if text.strip():
-                diff_changes.append({
-                    'type': 'added', 
-                    'text': text,
-                    'section': block.get('section', 'General')
-                })
-            stats['added_blocks'] += 1
-            stats['added_chars'] += len(text)
+        stats['modified_blocks'] += max(len(old_segment), len(new_segment))
+        stats['added_chars'] += added_chars
+        stats['removed_chars'] += removed_chars
 
     return ''.join(diff_html_parts), stats, diff_changes
 

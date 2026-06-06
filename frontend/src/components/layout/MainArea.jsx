@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { foldersApi } from "@/api";
+import { foldersApi, searchApi } from "@/api";
 import {
   Folder,
   FileText,
@@ -14,6 +14,9 @@ import {
   Home,
   ChevronRight,
   Shield,
+  Search,
+  Lock,
+  AlertTriangle,
 } from "lucide-react";
 import { DocxIcon } from "@/components/ui/DocxIcon";
 import { PdfIcon } from "@/components/ui/PdfIcon";
@@ -35,9 +38,106 @@ import {
 } from "./Dialogs";
 import { AccessListDialog } from "./AccessListDialog";
 import { useAuth } from "@/context/AuthContext";
-import { folder } from "jszip";
+import { useEffect } from "react";
 
-export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
+function SearchBar({ onSelectFolder, onSelectDocument }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (query.trim()) {
+        setLoading(true);
+        searchApi.query(query).then((data) => {
+          setResults(data);
+          setLoading(false);
+        }).catch(err => {
+          console.error(err);
+          setLoading(false);
+        });
+      } else {
+        setResults(null);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [query]);
+
+  return (
+    <div className="relative ml-2">
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+        <input
+          type="text"
+          placeholder="Search..."
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          className="h-8 w-[150px] sm:w-[200px] lg:w-[300px] rounded-md border border-input bg-background pl-8 pr-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        {loading && <Loader2 className="absolute right-2.5 top-2 h-4 w-4 animate-spin text-muted-foreground" />}
+      </div>
+      {isOpen && query.trim() && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 w-[300px] lg:w-[400px] bg-popover text-popover-foreground rounded-md border shadow-md z-50 max-h-[400px] overflow-auto py-1">
+            {results && results.folders.length === 0 && results.documents.length === 0 ? (
+              <div className="p-3 text-sm text-muted-foreground text-center">No results found</div>
+            ) : (
+              <>
+                {results?.folders.length > 0 && (
+                  <div className="px-2 py-1.5">
+                    <div className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wider">Folders</div>
+                    {results.folders.map(f => (
+                      <div
+                        key={`f-${f.uuid}`}
+                        className="flex items-center px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                        onClick={() => {
+                          setIsOpen(false);
+                          setQuery("");
+                          onSelectFolder(f.uuid);
+                        }}
+                      >
+                        <Folder className="w-4 h-4 mr-2 text-blue-500" />
+                        <span className="truncate">{f.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {results?.documents.length > 0 && (
+                  <div className="px-2 py-1.5">
+                    <div className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wider">Documents</div>
+                    {results.documents.map(d => (
+                      <div
+                        key={`d-${d.uuid}`}
+                        className="flex items-center px-2 py-1.5 text-sm rounded-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                        onClick={() => {
+                          setIsOpen(false);
+                          setQuery("");
+                          onSelectDocument(d.uuid);
+                        }}
+                      >
+                        <FileText className="w-4 h-4 mr-2 text-muted-foreground" />
+                        <span className="truncate">{d.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export function MainArea({ activeFolderUuid, onSelectFolder, onSelectDocument }) {
   const { isAdminOrManager } = useAuth();
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -47,27 +147,77 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
   const [accessListOpen, setAccessListOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
 
-  const queryKey = ["folders", activeFolderId || "root", "children"];
+  const queryKey = ["folders", activeFolderUuid || "root", "children"];
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey,
     queryFn: () =>
-      activeFolderId
-        ? foldersApi.getChildren(activeFolderId)
+      activeFolderUuid
+        ? foldersApi.getChildren(activeFolderUuid)
         : foldersApi.getRootChildren(),
+    retry: false,
   });
 
   const { data: folderPath } = useQuery({
-    queryKey: ["folders", activeFolderId, "path"],
-    queryFn: () => foldersApi.getPath(activeFolderId),
-    enabled: !!activeFolderId,
+    queryKey: ["folders", activeFolderUuid, "path"],
+    queryFn: () => foldersApi.getPath(activeFolderUuid),
+    enabled: !!activeFolderUuid,
+    retry: false,
   });
 
   const currentPerms = data?.current_folder_permissions || [];
   const canCreateFolder =
     isAdminOrManager || currentPerms.includes("folder:create");
-  const canUploadDoc =
-    isAdminOrManager || currentPerms.includes("document:create");
+  const canUploadDoc = isAdminOrManager;
+
+  const isUnauthorized = error && error.response?.status === 403;
+  const isNotFound = error && error.response?.status === 404;
+
+  if (isUnauthorized) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900 min-h-[500px]">
+        <div className="max-w-md w-full text-center space-y-6 bg-white dark:bg-neutral-950 p-8 rounded-xl shadow-lg border border-neutral-200 dark:border-neutral-800">
+          <div className="mx-auto h-16 w-16 bg-red-100 dark:bg-red-900/30 flex items-center justify-center rounded-full text-red-600 dark:text-red-400">
+            <Lock className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">Unauthorized Access</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              You do not have the required permissions to access this folder. If you believe this is an error, please contact your administrator.
+            </p>
+          </div>
+          <div className="pt-4">
+            <Button onClick={() => onSelectFolder?.(null)} className="w-full">
+              Go back to Home
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isNotFound) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-neutral-50 dark:bg-neutral-900 min-h-[500px]">
+        <div className="max-w-md w-full text-center space-y-6 bg-white dark:bg-neutral-950 p-8 rounded-xl shadow-lg border border-neutral-200 dark:border-neutral-800">
+          <div className="mx-auto h-16 w-16 bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center rounded-full text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">Folder Not Found</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              The requested folder could not be located or has been deleted.
+            </p>
+          </div>
+          <div className="pt-4">
+            <Button onClick={() => onSelectFolder?.(null)} className="w-full">
+              Go back to Home
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -125,22 +275,22 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
             <Home className="w-4 h-4 mr-1.5" />
             <span className="hidden sm:inline">Home</span>
           </span>
-          {activeFolderId && folderPath ? (
+          {activeFolderUuid && folderPath ? (
             folderPath.map((f, index) => (
               <div
-                key={f.id}
+                key={f.uuid}
                 className="flex items-center space-x-2 overflow-hidden shrink-0"
               >
                 <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground/50" />
                 <span
                   className={`cursor-pointer hover:text-foreground truncate max-w-[150px] ${index === folderPath.length - 1 ? "text-foreground font-medium" : ""}`}
-                  onClick={() => onSelectFolder(f.id)}
+                  onClick={() => onSelectFolder(f.uuid)}
                 >
                   {f.name}
                 </span>
               </div>
             ))
-          ) : activeFolderId ? (
+          ) : activeFolderUuid ? (
             <div className="flex items-center space-x-2 overflow-hidden shrink-0">
               <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground/50" />
               <div className="text-foreground font-medium truncate flex items-center">
@@ -150,7 +300,8 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
           ) : null}
         </div>
 
-        <div className="flex space-x-2 shrink-0 ml-4">
+        <div className="flex items-center space-x-2 shrink-0 ml-4">
+          <SearchBar onSelectFolder={onSelectFolder} onSelectDocument={onSelectDocument} />
           {canCreateFolder && (
             <Button
               variant="default"
@@ -184,19 +335,21 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {items.map((item) => (
               <div
-                key={`${item.type}-${item.id}`}
+                key={`${item.type}-${item.uuid}`}
                 className="group border border-border rounded-lg p-4 hover:border-primary/50 hover:shadow-sm transition-all bg-card text-card-foreground flex flex-col cursor-pointer"
                 onClick={() =>
                   item.type === "folder"
-                    ? onSelectFolder(item.id)
-                    : onSelectDocument(item.id)
+                    ? onSelectFolder(item.uuid)
+                    : onSelectDocument(item.uuid)
                 }
               >
                 <div className="flex justify-between items-start mb-3">
                   <div className="p-1 rounded-md">
                     {item.type === "folder" ? (
                       <Folder className="w-8 h-8 text-primary" />
-                    ) : (item.storage_path || item.name)?.toLowerCase().endsWith('.pdf') ? (
+                    ) : (item.storage_path || item.name)
+                      ?.toLowerCase()
+                      .endsWith(".pdf") ? (
                       <PdfIcon className="w-10 h-10" />
                     ) : (
                       <DocxIcon className="w-10 h-10" />
@@ -267,13 +420,13 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
       <CreateFolderDialog
         open={createFolderOpen}
         onOpenChange={setCreateFolderOpen}
-        parentId={activeFolderId}
+        parentId={activeFolderUuid}
         folderPath={folderPath}
       />
       <UploadDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
-        folderId={activeFolderId}
+        folderId={activeFolderUuid}
         folderPath={folderPath}
       />
       <RenameDialog
@@ -282,7 +435,7 @@ export function MainArea({ activeFolderId, onSelectFolder, onSelectDocument }) {
         item={selectedItem}
       />
       <MoveDialog
-        key={selectedItem ? `${selectedItem.type}-${selectedItem.id}` : "none"}
+        key={selectedItem ? `${selectedItem.type}-${selectedItem.uuid}` : "none"}
         open={moveOpen}
         onOpenChange={handleMoveOpenChange}
         item={selectedItem}

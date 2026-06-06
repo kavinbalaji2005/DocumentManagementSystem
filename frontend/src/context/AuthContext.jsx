@@ -35,8 +35,8 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const login = async (employee_id, password) => {
-    const data = await authApi.login(employee_id, password);
+  const login = async (identifier, password) => {
+    const data = await authApi.login(identifier, password);
     localStorage.setItem("token", data.token);
     setUser(data.user);
   };
@@ -46,11 +46,21 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    try {
+      const userData = await authApi.getMe();
+      setUser(userData);
+    } catch (error) {
+      console.error("Failed to refresh session", error);
+    }
+  };
+
   const value = {
     user,
     loading,
     login,
     logout,
+    refreshUser,
     isAdmin: user?.role === "Admin",
     isManager: user?.role === "Manager",
     isAdminOrManager: user?.role === "Admin" || user?.role === "Manager",
